@@ -110,6 +110,11 @@ func _ready() -> void:
 			if addon_selected == false:
 				send_game_command("save_set_subdirectory s%s;addon_play %s" % [button.get_index(), CHAPTER_MAPS[selected_chapter]])
 			else:
+				if ADDON_MAPS[selected_addon] == "01_intro":
+					var levitation_workshop_ids = ADDON_WORKSHOP_IDS[selected_addon].split(",") # Levitation startup fix
+					for levitation_id in levitation_workshop_ids:
+						send_game_command("addon_disable %s" % levitation_id) 
+					#await get_tree().create_timer(1).timeout
 				send_game_command("addon_enable %s" % ADDON_WORKSHOP_IDS[selected_addon])
 				send_game_command("save_set_subdirectory s%s;addon_play %s" % [button.get_index(), ADDON_MAPS[selected_addon]])
 		)
