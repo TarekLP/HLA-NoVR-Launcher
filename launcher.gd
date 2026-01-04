@@ -12,6 +12,7 @@ const GAME_MENU_SCENE = preload("res://game_menu.tscn")
 const ICON_MUTE = preload("res://icons/mute.svg")
 const ICON_VOLUME = preload("res://icons/volume.svg")
 const GITHUB_USER = "HLANoVR"
+const VALID_BRANCHES = ["main", "mods", "steam_deck", "next"]
 
 @onready var config = ConfigFile.new()
 @onready var mod_branch: LineEdit = $Content/VBoxContainer2/LineEditModBranch
@@ -34,6 +35,7 @@ const GITHUB_USER = "HLANoVR"
 @onready var content: Control = $Content
 @onready var label_version: Label = $Content/LabelVersion
 @onready var check_box_force_mod_reinstall: CheckBox = $Content/VBoxContainer2/CheckBoxForceModReinstall
+@onready var check_box_default_game_menu: CheckBox = $Content/VBoxContainer2/CheckBoxForceModReinstall/CheckBoxDefaultMenu
 
 var game_menu: GameMenu
 var geometry: PackedStringArray
@@ -41,6 +43,7 @@ var pid: int
 var installation_path: String
 var local_version_content: String
 var mod_needs_install := false
+var mod_use_default_game_menu := false
 var launcher_helper_executable_name := "HLA-NoVR-Launcher-Helper.exe"
 var os_platform_unix := false
 
@@ -87,19 +90,26 @@ func _ready() -> void:
 		# Launch Game
 		custom_launch_options.text = custom_launch_options.text.replace("-fullscreen", "")
 		custom_launch_options.text = custom_launch_options.text.replace("-nowindow", "")
-		OS.shell_open("steam://run/546560// -novr +vr_enable_fake_vr 1 -condebug +hlvr_main_menu_delay 999999 +hlvr_main_menu_delay_with_intro 999999 +hlvr_main_menu_delay_with_intro_and_saves 999999 " + custom_launch_options.text + " -window")
-		game_menu = GAME_MENU_SCENE.instantiate()
-		game_menu.launcher = self
-		add_child(game_menu)
-		game_menu.visible = true
-		var thread = Thread.new()
-		thread.start(_thread_helper)
+		var game_menu_launch_option := "+hlvr_main_menu_delay 999999 +hlvr_main_menu_delay_with_intro 999999 +hlvr_main_menu_delay_with_intro_and_saves 999999 "
+		if mod_use_default_game_menu:
+			game_menu_launch_option = "-defaultmenu "
+		OS.shell_open("steam://run/546560// -novr +vr_enable_fake_vr 1 -condebug " + game_menu_launch_option + custom_launch_options.text + " -window")
+		if mod_use_default_game_menu == false:
+			game_menu = GAME_MENU_SCENE.instantiate()
+			game_menu.launcher = self
+			add_child(game_menu)
+			game_menu.visible = true
+			var thread = Thread.new()
+			thread.start(_thread_helper)
 		background_video.stop()
 		content.visible = false
 		label_info.text = "Please confirm the launch of the game on Steam.
 		If you accidentally canceled it or encounter any problems,
 		close the game and restart this launcher."
 		label_info.visible = true
+		if mod_use_default_game_menu:
+			await get_tree().create_timer(14).timeout
+			get_tree().quit()
 	, CONNECT_ONE_SHOT)
 
 	if OS.get_cmdline_args().has("-debug"):
@@ -259,6 +269,22 @@ func setup_config() -> void:
 		config.save(CONFIG_PATH)
 	)
 
+	# Default menu
+	check_box_default_game_menu.button_pressed = config.get_value(
+		"Launcher",
+		"defaultgamemenu",
+		false
+	)
+	check_box_default_game_menu.pressed.emit()
+	check_box_default_game_menu.pressed.connect(func():
+		config.set_value(
+			"Launcher",
+			"defaultgamemenu",
+			check_box_default_game_menu.button_pressed
+		)
+		config.save(CONFIG_PATH)
+	)
+
 
 func translate_key_name(input: String) -> String:
 	match input:
@@ -286,6 +312,16 @@ func _on_button_play_pressed() -> void:
 		accept_dialog.dialog_text = "Invalid game installation."
 		accept_dialog.show()
 		return
+
+	# Check for valid mod branch value
+	if not mod_branch.text in VALID_BRANCHES and not OS.get_cmdline_args().has("-debug"):
+		accept_dialog.dialog_text = "Invalid branch name. Please set Mod branch to 'main', 'mods' or 'steam_deck'"
+		accept_dialog.show()
+		return
+
+	# Launch the game with the default menu
+	if check_box_default_game_menu.button_pressed or mod_branch.text == "steam_deck":
+		mod_use_default_game_menu = true
 
 	if OS.get_cmdline_args().has("-debug") and not check_box_force_mod_reinstall.button_pressed:
 		mod_ready_to_play.emit()

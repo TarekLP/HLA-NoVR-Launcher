@@ -80,6 +80,7 @@ offset_bottom = 600.0
 grow_horizontal = 2
 stream = ExtResource("1_y0jwk")
 expand = true
+loop = true
 
 [node name="TextureRectLogo" type="TextureRect" parent="Content"]
 layout_mode = 1
@@ -141,6 +142,13 @@ grow_vertical = 0
 [node name="CheckBoxForceModReinstall" type="CheckBox" parent="Content/VBoxContainer2"]
 layout_mode = 2
 text = "Force mod reinstall"
+
+[node name="CheckBoxDefaultMenu" type="CheckBox" parent="Content/VBoxContainer2/CheckBoxForceModReinstall"]
+layout_mode = 0
+offset_left = 200.0
+offset_right = 230.0
+offset_bottom = 30.0
+text = "Default menu"
 
 [node name="LabelModBranch" type="Label" parent="Content/VBoxContainer2"]
 layout_mode = 2
