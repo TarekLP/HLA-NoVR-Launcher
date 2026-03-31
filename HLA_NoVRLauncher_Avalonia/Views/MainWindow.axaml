@@ -3,18 +3,92 @@
         xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
         x:Class="HLA_NoVRLauncher_Avalonia.Views.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="HLA_NoVRLauncher_Avalonia">
+        x:DataType="vm:MainViewModel"
+        Title="Half-Life: Alyx - NoVR Launcher"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True">
 
     <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainWindowViewModel/>
+        <vm:MainViewModel/>
     </Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <Grid ColumnDefinitions="250, *">
+        <Border Grid.Column="0" Classes="sidebar" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto, *, Auto">
+                <StackPanel Grid.Row="0" Margin="20,40,20,20">
+                    <TextBlock Text="HLA-NoVR" Classes="section-title" />
+                    <TextBlock Text="Launcher" Classes="subtitle" />
+                </StackPanel>
 
+                <StackPanel Grid.Row="1" Margin="10,0">
+                    <Button Content="Dashboard" Classes="sidebar-btn" IsEnabled="False"/>
+                    <Button Content="Mod Settings" Classes="sidebar-btn"/>
+                    <Button Content="Steam Workshop" Classes="sidebar-btn"/>
+                </StackPanel>
+
+                <Border Grid.Row="2" Margin="15" Padding="10" Classes="card">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Status:" FontSize="12" Foreground="{StaticResource Brush.TextSecondary}"/>
+                        <TextBlock Text="{Binding StatusMessage}" FontSize="13" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Column="1" RowDefinitions="*, Auto">
+            <ScrollViewer Grid.Row="0">
+                <StackPanel Margin="30" Spacing="20">
+                    <TextBlock Text="Configuration" Classes="section-title"/>
+                    
+                    <Border Classes="card">
+                        <StackPanel Spacing="15">
+                            <TextBlock Text="Game Installation Path" FontWeight="Bold"/>
+                            <Grid ColumnDefinitions="*, Auto">
+                                <TextBox Grid.Column="0" 
+                                         Text="{Binding Settings.GamePath}" 
+                                         Watermark="Auto-detecting Steam path..."
+                                         IsReadOnly="True"/>
+                                <Button Grid.Column="1" Content="Browse" Margin="10,0,0,0"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Additional Launch Arguments" FontWeight="Bold"/>
+                            <TextBox Classes="editor" 
+                                     Text="{Binding Settings.CustomLaunchArgs}" 
+                                     Watermark="-console -vconsole"
+                                     AcceptsReturn="True" 
+                                     Height="80"/>
+                        </StackPanel>
+                    </Border>
+
+                    <CheckBox Content="Close launcher after game starts" 
+                              IsChecked="{Binding Settings.CloseLauncherOnStart}"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Border Grid.Row="1" Padding="20" Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0">
+                <Grid ColumnDefinitions="*, Auto">
+                    <ProgressBar Grid.Column="0" 
+                                 VerticalAlignment="Center" 
+                                 Margin="0,0,20,0" 
+                                 IsIndeterminate="{Binding IsBusy}"/>
+                    
+                    <Button Grid.Column="1" 
+                            Content="PLAY NOVR" 
+                            Classes="accent" 
+                            Width="180" 
+                            Height="50"
+                            FontSize="18"
+                            FontWeight="Heavy"
+                            Command="{Binding LaunchGameCommand}"
+                            IsEnabled="{Binding CanLaunch}"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
 </Window>
