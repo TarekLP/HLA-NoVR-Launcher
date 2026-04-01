@@ -15,6 +15,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		private LauncherSettings _settings;
 		private string _statusMessage = "Checking game status...";
 		private bool _isBusy;
+		private bool _isSidebarOpen = true;
 
 		public MainWindowViewModel()
 		{
@@ -22,16 +23,14 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			_launchService = new LaunchService();
 			_settingsService = new SettingsService();
 
-			// Load saved user data
 			_settings = _settingsService.LoadSettings();
 
-			// Initialize the Command for the Play button
 			LaunchGameCommand = MiniCommand.CreateFromTask(LaunchGameAsync);
+			ToggleSidebarCommand = MiniCommand.CreateFromTask(ToggleSidebarAsync);
 
 			UpdateStatus();
 		}
 
-		// The UI binds to this property for paths and arguments
 		public LauncherSettings Settings
 		{
 			get => _settings;
@@ -63,10 +62,20 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			}
 		}
 
+		public bool IsSidebarOpen
+		{
+			get => _isSidebarOpen;
+			set
+			{
+				_isSidebarOpen = value;
+				OnPropertyChanged();
+			}
+		}
+
 		public bool CanLaunch => !IsBusy;
 
-		// This is the property the "Play" button looks for
 		public ICommand LaunchGameCommand { get; }
+		public ICommand ToggleSidebarCommand { get; }
 
 		public void UpdateStatus()
 		{
@@ -85,12 +94,17 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			}
 		}
 
+		public async Task ToggleSidebarAsync()
+		{
+			IsSidebarOpen = !IsSidebarOpen;
+			await Task.CompletedTask;
+		}
+
 		public async Task LaunchGameAsync()
 		{
 			IsBusy = true;
 			StatusMessage = "Game is running...";
 
-			// Save settings automatically before launching
 			_settingsService.SaveSettings(Settings);
 
 			_launchService.LaunchGame(Settings.GamePath, Settings.CustomLaunchArgs, () =>
@@ -103,7 +117,6 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		}
 	}
 
-	// A simple helper class to handle the button click without needing extra libraries
 	public class MiniCommand : ICommand
 	{
 		private readonly Func<Task> _action;

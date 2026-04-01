@@ -3,14 +3,14 @@
 
   <Styles.Resources>
     <Color x:Key="Color.Background">#000000</Color>
-    <Color x:Key="Color.Surface">#121212</Color>
-    <Color x:Key="Color.SurfaceAlt">#1e1e1e</Color>
-    <Color x:Key="Color.Border">#330066</Color>
+    <Color x:Key="Color.Surface">#151515</Color>
+    <Color x:Key="Color.SurfaceAlt">#292929</Color>
+    <Color x:Key="Color.Border">#292929</Color>
     <Color x:Key="Color.TextPrimary">#FFFFFF</Color>
-    <Color x:Key="Color.TextSecondary">#B0B0B0</Color>
-    <Color x:Key="Color.Accent">#6a1b9a</Color>
-    <Color x:Key="Color.AccentHover">#9c27b0</Color>
-    <Color x:Key="Color.AccentDeep">#4a148c</Color>
+    <Color x:Key="Color.TextSecondary">#1491fb</Color>
+    <Color x:Key="Color.Accent">#FB7E14</Color>
+    <Color x:Key="Color.AccentHover">#FB7E14</Color>
+    <Color x:Key="Color.AccentDeep">#FB7E14</Color>
 
     <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}"/>
     <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}"/>
@@ -41,7 +41,7 @@
   </Style>
 
   <Style Selector="Button">
-    <Setter Property="Background" Value="{StaticResource Brush.AccentDeep}"/>
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
     <Setter Property="Foreground" Value="White"/>
     <Setter Property="Padding" Value="16,8"/>
     <Setter Property="CornerRadius" Value="6"/>
@@ -58,9 +58,15 @@
   </Style>
 
   <Style Selector="CheckBox">
-    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="CheckBox:checked">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
   </Style>
   <Style Selector="CheckBox /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
     <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
   </Style>
   <Style Selector="CheckBox:checked /template/ Path">
@@ -68,7 +74,10 @@
   </Style>
 
   <Style Selector="RadioButton">
-    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="RadioButton:checked">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
   </Style>
   <Style Selector="RadioButton:checked /template/ Ellipse#CheckGlyph">
     <Setter Property="Fill" Value="{StaticResource Brush.Accent}"/>
@@ -79,7 +88,7 @@
     <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
     <Setter Property="CornerRadius" Value="4"/>
-    <Setter Property="CaretBrush" Value="{StaticResource Brush.AccentHover}"/>
+    <Setter Property="CaretBrush" Value="{StaticResource Brush.Accent}"/>
   </Style>
   <Style Selector="TextBox:focus /template/ Border#Part_BorderElement">
     <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
@@ -91,16 +100,24 @@
     <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
   </Style>
+  <Style Selector="ComboBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
   <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
   </Style>
 
   <Style Selector="ListBox">
     <Setter Property="Background" Value="{StaticResource Brush.Surface}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
   </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
   <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
   </Style>
 
   <Style Selector="ProgressBar">
@@ -122,17 +139,17 @@
     <Setter Property="FontSize" Value="14"/>
   </Style>
   <Style Selector="TabItem:selected">
-    <Setter Property="Foreground" Value="{StaticResource Brush.AccentHover}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
   </Style>
   <Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
-    <Setter Property="Background" Value="{StaticResource Brush.AccentHover}"/>
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
   </Style>
 
   <Style Selector="ScrollViewer">
     <Setter Property="Background" Value="Transparent"/>
   </Style>
   <Style Selector="ScrollBar /template/ Thumb">
-    <Setter Property="Background" Value="{StaticResource Brush.AccentDeep}"/>
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
   </Style>
 
   <Style Selector="Menu">
@@ -152,7 +169,7 @@
   <Style Selector="TextBlock.section-title">
     <Setter Property="FontSize" Value="24"/>
     <Setter Property="FontWeight" Value="Bold"/>
-    <Setter Property="Foreground" Value="{StaticResource Brush.AccentHover}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
   </Style>
 
   <Style Selector="Separator">
