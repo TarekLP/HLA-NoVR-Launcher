@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+             x:Class="HLA_NoVRLauncher_Avalonia.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <ScrollViewer Margin="30">
+        <StackPanel Spacing="25">
+            <TextBlock Text="SETTINGS" Classes="section-title"/>
+
+            <!-- Mod Branch -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Mod Branch" FontWeight="Bold"/>
+                    <ComboBox HorizontalAlignment="Stretch" SelectedIndex="0">
+                        <ComboBoxItem Content="Main"/>
+                        <ComboBoxItem Content="Mods"/>
+                        <ComboBoxItem Content="Steam Deck"/>
+                    </ComboBox>
+                    <Separator/>
+                    <CheckBox Content="Force Reinstall"/>
+                    <CheckBox Content="Use Legacy Main Menu"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Audio -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Audio" FontWeight="Bold"/>
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="12"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Mute Background Video"
+                                   VerticalAlignment="Center"/>
+                        <ToggleSwitch IsChecked="{Binding Settings.IsMuted}"
+                                      OnContent="Muted"
+                                      OffContent="Unmuted"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Launch Arguments -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Launch Arguments" FontWeight="Bold"/>
+                    <TextBox Text="{Binding Settings.CustomLaunchArgs}"
+                             Watermark="-console -vconsole"
+                             Height="80"
+                             AcceptsReturn="True"/>
+                </StackPanel>
+            </Border>
+
+            <Button Content="Save Settings"
+                    Classes="accent"
+                    Command="{Binding SaveSettingsCommand}"
+                    HorizontalAlignment="Right"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
