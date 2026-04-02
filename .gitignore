@@ -1,5 +1,8 @@
-.godot
-.vscode
-*.exe
-*.zip
-*.dll
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/HLA_NoVRLauncher_Avalonia/.vs
+/HLA_NoVRLauncher_Avalonia/bin/Debug/net10.0
+/HLA_NoVRLauncher_Avalonia/obj

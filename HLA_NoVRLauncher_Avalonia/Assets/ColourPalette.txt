@@ -1,0 +1,6 @@
+Ecstasy - Orange: #FB7E14
+Light Blue - Blue: #1491fb
+Pure Black - Black: #000000
+Hunter Green - Dark Grey / Green: #151515
+Shark - Light Grey: #292929
+Pure White - White: #FFFFFF

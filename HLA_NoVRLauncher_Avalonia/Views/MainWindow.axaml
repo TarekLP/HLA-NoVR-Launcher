@@ -1,0 +1,98 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+        xmlns:views="using:HLA_NoVRLauncher_Avalonia.Views"
+        x:Class="HLA_NoVRLauncher_Avalonia.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Background="#050505"
+        Title="HLA NoVR Launcher"
+        WindowStartupLocation="CenterScreen"
+        Width="1280" Height="720">
+
+    <Grid ColumnDefinitions="Auto, *">
+
+        <!-- Sidebar -->
+    <Border Grid.Column="0"
+            Width="{Binding SidebarWidth}"
+            Classes.open="{Binding IsSidebarOpen}"
+            Background="{StaticResource Brush.Surface}"
+            BorderBrush="{StaticResource Brush.Border}"
+            BorderThickness="0,0,1,0"
+            ClipToBounds="True">
+
+            <DockPanel>
+
+                <!-- Toggle button + title -->
+                <StackPanel DockPanel.Dock="Top" Spacing="0">
+                    <Button Command="{Binding ToggleSidebarCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Background="Transparent"
+                            Padding="12,10">
+                        <TextBlock Text="☰"
+                                   FontSize="18"
+                                   Foreground="{StaticResource Brush.Accent}"/>
+                    </Button>
+
+                    <TextBlock Text="Half-Life: Alyx NoVR"
+                               IsVisible="{Binding IsSidebarOpen}"
+                               FontWeight="Black"
+                               FontSize="15"
+                               Foreground="{StaticResource Brush.Accent}"
+                               Margin="16,4,16,16"
+                               TextWrapping="Wrap"/>
+
+                    <Separator/>
+                </StackPanel>
+
+                <!-- Nav buttons -->
+                <StackPanel DockPanel.Dock="Top"
+                            Spacing="4"
+                            Margin="8,8,8,0">
+
+                    <Button Command="{Binding NavigateMainCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="10,8"
+                            ToolTip.Tip="Home">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="🏠" FontSize="16"/>
+                            <TextBlock Text="Home"
+                                       IsVisible="{Binding IsSidebarOpen}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavigateSettingsCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="10,8"
+                            ToolTip.Tip="Settings">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="⚙" FontSize="16"/>
+                            <TextBlock Text="Settings"
+                                       IsVisible="{Binding IsSidebarOpen}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- Main content area -->
+        <ContentControl Grid.Column="1"
+                        Content="{Binding CurrentPage}">
+            <ContentControl.DataTemplates>
+                <DataTemplate DataType="{x:Type vm:HomeViewModel}">
+                    <views:HomeView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                    <views:SettingsView />
+                </DataTemplate>
+            </ContentControl.DataTemplates>
+        </ContentControl>
+
+    </Grid>
+</Window>
