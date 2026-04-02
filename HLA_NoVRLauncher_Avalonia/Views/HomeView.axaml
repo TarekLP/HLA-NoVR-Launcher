@@ -1,0 +1,58 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+    xmlns:vlc="using:LibVLCSharp.Avalonia"
+    x:Class="HLA_NoVRLauncher_Avalonia.Views.HomeView"
+    x:DataType="vm:HomeViewModel">
+
+    <Grid RowDefinitions="*, Auto">
+
+        <!-- Background Video -->
+        <vlc:VideoView x:Name="VideoBackground"
+                       Grid.Row="0"
+                       ZIndex="0"/>
+
+        <!-- Dark overlay so buttons are readable over the video -->
+        <Border Grid.Row="0"
+                ZIndex="1"
+                Background="#66000000"/>
+
+        <!-- UI Content -->
+        <StackPanel Grid.Row="0"
+                    ZIndex="2"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="15">
+
+            <Button Content="Play"
+                    Width="200"
+                    Height="40"
+                    Classes="accent"
+                    Command="{Binding LaunchGameCommand}"
+                    IsEnabled="{Binding CanLaunch}"/>
+
+            <Button Content="Install - Check for Updates"
+                    Width="200"
+                    Height="40"/>
+        </StackPanel>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="1"
+                Height="50"
+                Background="{StaticResource Brush.SurfaceAlt}"
+                IsVisible="{Binding IsBusy}">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="20,0">
+                <TextBlock Text="STATUS:"
+                           Foreground="{StaticResource Brush.Accent}"
+                           FontWeight="Bold"
+                           Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding StatusMessage}"/>
+            </StackPanel>
+        </Border>
+
+    </Grid>
+
+</UserControl>

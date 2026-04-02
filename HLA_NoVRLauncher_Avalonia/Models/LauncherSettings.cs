@@ -10,5 +10,6 @@ namespace HLA_NoVRLauncher_Avalonia.Models
 		public string CustomLaunchArgs { get; set; } = string.Empty;
 		public bool AutoLaunch { get; set; } = false;
 		public bool CloseLauncherOnStart { get; set; } = true;
+		public bool IsMuted { get; set; } = false;
 	}
 }

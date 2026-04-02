@@ -1,16 +1,8 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 
 namespace HLA_NoVRLauncher_Avalonia.ViewModels
 {
-	public class ViewModelBase : INotifyPropertyChanged
+	public class ViewModelBase : ObservableObject
 	{
-		public event PropertyChangedEventHandler? PropertyChanged;
-
-		protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-		{
-			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-		}
 	}
 }

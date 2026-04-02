@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 
 namespace HLA_NoVRLauncher_Avalonia.Views
 {
