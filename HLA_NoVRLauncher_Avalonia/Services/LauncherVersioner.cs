@@ -17,7 +17,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		private readonly HttpClient _http = new();
 
 		// Launcher Version Checking
-
 		/// <summary>
 		/// Fetches the latest launcher release tag from GitHub API.
 		/// Returns null if the request fails.
