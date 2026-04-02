@@ -10,7 +10,7 @@
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Windows
 1. Download the [latest release](https://github.com/HLANoVR/HLA-NoVR-Launcher/releases).
@@ -21,12 +21,12 @@
 ### Steam Deck / Linux
 If you are using a Steam Deck or Linux, please refer to the **FAQ** for specific installation instructions.
 
-## ℹ️ Important Information
+##  Important Information
 * **Folder Selection:** If prompted to select a folder after clicking "Play," navigate to your **Half-Life Alyx** installation directory (the one containing the `game` and `content` folders).
 * **Compatibility:** Only official copies of the game purchased on Steam are supported.
 
-## 🎬 Credits
+##  Credits
 * The background video was created by **Half Peeps**.
 
-## ⚖️ License
+##  License
 This program is licensed under the **GPL-3.0 License**. It utilizes a custom version of the Steam Achievement Manager, modified to facilitate command-line achievement unlocking.
