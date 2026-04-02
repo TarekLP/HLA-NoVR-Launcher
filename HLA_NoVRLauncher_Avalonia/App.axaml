@@ -2,8 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="HLA_NoVRLauncher_Avalonia.App"
              xmlns:local="using:HLA_NoVRLauncher_Avalonia"
+             xmlns:converters="using:HLA_NoVRLauncher_Avalonia.Converters"
              RequestedThemeVariant="Dark">
-            
 
     <Application.DataTemplates>
         <local:ViewLocator/>
@@ -11,6 +11,10 @@
   
     <Application.Styles>
         <FluentTheme/>
-        <StyleInclude Source="avares://HLA_NoVRLauncher_Avalonia/Styles/AppStyles.axaml" />
+        <StyleInclude Source="avares://HLA_NoVRLauncher_Avalonia/Styles/AppStyles.axaml"/>
     </Application.Styles>
+
+    <Application.Resources>
+        <converters:BoolToClassConverter x:Key="SidebarOpenConverter"/>
+    </Application.Resources>
 </Application>
