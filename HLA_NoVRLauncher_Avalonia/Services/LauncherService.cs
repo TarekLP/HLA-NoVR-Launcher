@@ -3,6 +3,7 @@ using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace HLA_NoVRLauncher_Avalonia.Services
@@ -10,7 +11,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 	public class SettingsService
 	{
 		private readonly string _configPath = Path.Combine(
-			AppDomain.CurrentDomain.BaseDirectory, "launcher_settings.json");
+		AppDomain.CurrentDomain.BaseDirectory, "launcher_settings.json");
 
 		public LauncherSettings LoadSettings()
 		{
@@ -52,9 +53,28 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		public string? GetSteamInstallPath()
 		{
-			using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
-			return key?.GetValue("SteamPath")?.ToString()
-					   ?.Replace('/', Path.DirectorySeparatorChar);
+			// Windows — registry
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+			{
+				using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
+				return key?.GetValue("SteamPath")?.ToString()
+						   ?.Replace('/', Path.DirectorySeparatorChar);
+			}
+
+			// Linux / Steam Deck — standard paths
+			string[] linuxPaths =
+			[
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".steam", "steam"),
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "Steam"),
+			];
+
+			foreach (var path in linuxPaths)
+			{
+				if (Directory.Exists(path))
+					return path;
+			}
+
+			return null;
 		}
 
 		public string GetDefaultGamePath(string steamPath)
@@ -83,35 +103,36 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 	public class LaunchService
 	{
 		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
+		private const string AppId = "546560";
 
-		public Process? LaunchGame(string gamePath, string extraArgs, Action onExited)
+		public void LaunchGame(string extraArgs, Action onExited)
 		{
-			string exePath = Path.Combine(gamePath, ExecutableSubPath);
-			if (!File.Exists(exePath)) return null;
+			string args = $"-novr -console -vconsole +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 {extraArgs}".Trim();
+			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(args)}";
 
-			ProcessStartInfo startInfo = new()
+			Process.Start(new ProcessStartInfo
 			{
-				FileName = exePath,
-				Arguments = $"-novr -verbose {extraArgs}".Trim(),
-				WorkingDirectory = Path.GetDirectoryName(exePath),
-				UseShellExecute = false
-			};
+				FileName = uri,
+				UseShellExecute = true
+			});
 
-			Process? process = Process.Start(startInfo);
-			if (process != null)
+			System.Threading.Tasks.Task.Run(async () =>
 			{
-				process.EnableRaisingEvents = true;
-				process.Exited += (s, e) => onExited?.Invoke();
-			}
-			return process;
-		}
+				await System.Threading.Tasks.Task.Delay(5000);
 
-		public void KillGameProcess()
-		{
-			foreach (var process in Process.GetProcessesByName("hlvr"))
-			{
-				try { process.Kill(); } catch { }
-			}
+				while (true)
+				{
+					var procs = Process.GetProcessesByName("hlvr");
+					if (procs.Length > 0)
+					{
+						await procs[0].WaitForExitAsync();
+						break;
+					}
+					await System.Threading.Tasks.Task.Delay(2000);
+				}
+
+				onExited?.Invoke();
+			});
 		}
 	}
 }

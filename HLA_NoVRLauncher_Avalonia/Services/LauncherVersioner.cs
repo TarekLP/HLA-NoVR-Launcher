@@ -113,40 +113,42 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		{
 			try
 			{
-				// Step 1 — find the download URL for the latest release zip
-				onStatus("Fetching latest mod release info...");
-				string releaseUrl = $"https://api.github.com/repos/{GitHubUser}/{ModRepo}/releases/latest";
-				_http.DefaultRequestHeaders.UserAgent.TryParseAdd("HLA-NoVR-Launcher");
-
-				string releaseJson = await _http.GetStringAsync(releaseUrl);
-				using var doc = JsonDocument.Parse(releaseJson);
-
-				string? downloadUrl = null;
-				foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
-				{
-					string? name = asset.GetProperty("name").GetString();
-					if (name != null && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-					{
-						downloadUrl = asset.GetProperty("browser_download_url").GetString();
-						break;
-					}
-				}
-
-				if (downloadUrl == null)
-				{
-					onError("Could not find a mod zip in the latest release.");
-					return;
-				}
-
-				// Step 2 — download the zip with progress reporting
-				onStatus("Downloading mod files...");
 				string tempZip = Path.Combine(Path.GetTempPath(), "hla_novr_mod.zip");
 
-				using (var response = await _http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+				// Step 1 — try downloading from GitHub
+				bool downloadedFromWeb = false;
+				try
 				{
+					onStatus("Fetching latest mod release info...");
+					string releaseUrl = $"https://api.github.com/repos/{GitHubUser}/{ModRepo}/releases/latest";
+					_http.DefaultRequestHeaders.UserAgent.TryParseAdd("HLA-NoVR-Launcher");
+
+					string releaseJson = await _http.GetStringAsync(releaseUrl);
+					using var doc = JsonDocument.Parse(releaseJson);
+
+					string? downloadUrl = null;
+					foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
+					{
+						string? name = asset.GetProperty("name").GetString();
+						if (name != null && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+						{
+							downloadUrl = asset.GetProperty("browser_download_url").GetString();
+							break;
+						}
+					}
+
+					if (downloadUrl == null)
+						throw new Exception("No zip found in latest release.");
+
+					// Step 2 — download with progress
+					onStatus("Downloading mod files...");
+					using var response = await _http.GetAsync(
+						downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+
 					long? totalBytes = response.Content.Headers.ContentLength;
 					using var contentStream = await response.Content.ReadAsStreamAsync();
-					using var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None);
+					using var fileStream = new FileStream(
+						tempZip, FileMode.Create, FileAccess.Write, FileShare.None);
 
 					byte[] buffer = new byte[81920];
 					long totalRead = 0;
@@ -156,15 +158,38 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 					{
 						await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
 						totalRead += bytesRead;
-
 						if (totalBytes.HasValue)
 							onProgress.Report((double)totalRead / totalBytes.Value);
 					}
+
+					downloadedFromWeb = true;
+				}
+				catch (Exception ex)
+				{
+					// Web download failed — try local fallback
+					onStatus($"Online download failed ({ex.Message}), checking for local fallback...");
+
+					string localFallback = Path.Combine(
+						AppDomain.CurrentDomain.BaseDirectory,
+						"Fallback",
+						"hla_novr_mod.zip"
+					);
+
+					if (File.Exists(localFallback))
+					{
+						onStatus("Found local fallback, using that instead...");
+						File.Copy(localFallback, tempZip, overwrite: true);
+						onProgress.Report(1.0);
+					}
+					else
+					{
+						onError("Download failed and no local fallback was found. " +
+								"Please check your internet connection or add a fallback zip to the Fallback folder.");
+						return;
+					}
 				}
 
-				onProgress.Report(1.0);
-
-				// Step 3 — extract the zip into the game directory
+				// Step 3 — extract into game directory
 				onStatus("Installing mod files...");
 				if (!Directory.Exists(gamePath))
 				{
@@ -174,10 +199,12 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 				ZipFile.ExtractToDirectory(tempZip, gamePath, overwriteFiles: true);
 
-				// Step 4 — clean up temp file
+				// Step 4 — clean up temp zip
 				File.Delete(tempZip);
 
-				onStatus("Mod installed successfully!");
+				onStatus(downloadedFromWeb
+					? "Mod installed successfully from latest release!"
+					: "Mod installed successfully from local fallback!");
 			}
 			catch (Exception ex)
 			{

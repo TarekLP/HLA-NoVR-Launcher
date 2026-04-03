@@ -2,57 +2,85 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
-    xmlns:vlc="using:LibVLCSharp.Avalonia"
     x:Class="HLA_NoVRLauncher_Avalonia.Views.HomeView"
     x:DataType="vm:HomeViewModel">
 
-    <Grid RowDefinitions="*, Auto">
+    <Panel>
 
-        <!-- Background Video -->
-        <vlc:VideoView x:Name="VideoBackground"
-                       Grid.Row="0"
-                       ZIndex="0"/>
+        <!-- Background "Video" -->
+        <Image x:Name="VideoBackground"
+               Stretch="UniformToFill"
+               IsHitTestVisible="False"/>
 
-        <!-- Dark overlay so buttons are readable over the video -->
-        <Border Grid.Row="0"
-                ZIndex="1"
-                Background="#66000000"/>
+        <!-- Dark overlay -->
+        <Border Background="#66000000"
+                IsHitTestVisible="False"/>
 
-        <!-- UI Content -->
-        <StackPanel Grid.Row="0"
-                    ZIndex="2"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Center"
-                    Spacing="15">
+        <!-- Main layout -->
+        <Grid RowDefinitions="*, Auto">
 
-            <Button Content="Play"
-                    Width="200"
-                    Height="40"
-                    Classes="accent"
-                    Command="{Binding LaunchGameCommand}"
-                    IsEnabled="{Binding CanLaunch}"/>
-
-            <Button Content="Install - Check for Updates"
-                    Width="200"
-                    Height="40"/>
-        </StackPanel>
-
-        <!-- Status Bar -->
-        <Border Grid.Row="1"
-                Height="50"
-                Background="{StaticResource Brush.SurfaceAlt}"
-                IsVisible="{Binding IsBusy}">
-            <StackPanel Orientation="Horizontal"
+            <StackPanel Grid.Row="0"
                         VerticalAlignment="Center"
-                        Margin="20,0">
-                <TextBlock Text="STATUS:"
-                           Foreground="{StaticResource Brush.Accent}"
-                           FontWeight="Bold"
-                           Margin="0,0,10,0"/>
-                <TextBlock Text="{Binding StatusMessage}"/>
-            </StackPanel>
-        </Border>
+                        HorizontalAlignment="Center"
+                        Spacing="15">
 
-    </Grid>
+                        <!-- Logo -->
+                <Image Source="avares://HLA_NoVRLauncher_Avalonia/Assets/logo.png"
+                       Width="300"
+                       HorizontalAlignment="Center"/>
+                <Button Content="Play"
+                        Width="200"
+                        Height="40"
+                        HorizontalAlignment="Center"
+                        HorizontalContentAlignment="Center"
+                        VerticalAlignment="Center"
+                        Classes="accent"
+                        Command="{Binding LaunchGameCommand}"
+                        IsEnabled="{Binding CanLaunch}"/>
+
+                <Button Content="{Binding InstallButtonText}"
+                        Width="200"
+                        Height="40"
+                        HorizontalAlignment="Center"
+                        HorizontalContentAlignment="Center"
+                        VerticalAlignment="Center"
+                        Command="{Binding InstallModCommand}"
+                        IsEnabled="{Binding CanInstall}"/>
+
+                <StackPanel IsVisible="{Binding IsInstalling}"
+                            Width="200"
+                            Spacing="6">
+                    <ProgressBar Value="{Binding InstallProgress}"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Height="6"/>
+                    <TextBlock Text="{Binding InstallStatusMessage}"
+                               Foreground="White"
+                               FontSize="12"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+
+            </StackPanel>
+
+            <!-- Status Bar -->
+            <Border Grid.Row="1"
+                    Height="50"
+                    Background="{StaticResource Brush.SurfaceAlt}"
+                    IsVisible="{Binding IsBusy}">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="20,0">
+                    <TextBlock Text="STATUS:"
+                               Foreground="{StaticResource Brush.Accent}"
+                               FontWeight="Bold"
+                               Margin="0,0,10,0"/>
+                    <TextBlock Text="{Binding StatusMessage}"/>
+                </StackPanel>
+            </Border>
+
+        </Grid>
+
+    </Panel>
 
 </UserControl>
