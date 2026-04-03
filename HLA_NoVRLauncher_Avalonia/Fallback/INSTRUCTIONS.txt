@@ -1,0 +1,4 @@
+Grab a manual Install build from here: https://www.moddb.com/mods/half-life-alyx-novr
+Name it: "hla_novr_mod"
+
+Boom now youve made a Fallback build incase the Launcher doesnt work
