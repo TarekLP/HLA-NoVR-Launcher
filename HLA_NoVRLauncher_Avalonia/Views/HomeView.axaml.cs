@@ -33,14 +33,14 @@ namespace HLA_NoVRLauncher_Avalonia.Views
 			AttachedToVisualTree += (_, _) =>
 			{
 				Dispatcher.UIThread.Post(PlayVideo, DispatcherPriority.Loaded);
+			};
 
-				if (DataContext is ViewModels.HomeViewModel vm)
+			DataContextChanged += (_, _) =>
+			{
+				if (DataContext is ViewModels.HomeViewModel)
 				{
-					vm.PropertyChanged += (_, e) =>
-					{
-						if (e.PropertyName == nameof(ViewModels.HomeViewModel.IsMuted))
-							SetMuted(vm.IsMuted);
-					};
+					var settings = new SettingsService().LoadSettings();
+					SetMuted(settings.IsMuted);
 				}
 			};
 		}

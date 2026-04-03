@@ -11,5 +11,6 @@ namespace HLA_NoVRLauncher_Avalonia.Models
 		public bool AutoLaunch { get; set; } = false;
 		public bool CloseLauncherOnStart { get; set; } = true;
 		public bool IsMuted { get; set; } = false;
+		public string ModBranch { get; set; } = "main";
 	}
 }

@@ -11,11 +11,13 @@
             <Border Classes="card" Padding="20">
                 <StackPanel Spacing="15">
                     <TextBlock Text="Mod Branch" FontWeight="Bold"/>
-                    <ComboBox HorizontalAlignment="Stretch" SelectedIndex="0">
-                        <ComboBoxItem Content="Main"/>
-                        <ComboBoxItem Content="Mods"/>
-                        <ComboBoxItem Content="Steam Deck"/>
-                    </ComboBox>
+                    <TextBlock Text="Selects which branch of the NoVR mod to install and check updates for."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <ComboBox HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding AvailableBranches}"
+                              SelectedItem="{Binding SelectedBranch}"/>
                     <Separator/>
                     <CheckBox Content="Force Reinstall"/>
                     <CheckBox Content="Use Legacy Main Menu"/>
@@ -43,9 +45,26 @@
                 <StackPanel Spacing="10">
                     <TextBlock Text="Launch Arguments" FontWeight="Bold"/>
                     <TextBox Text="{Binding Settings.CustomLaunchArgs}"
-                             Watermark="-console -vconsole"
+                             Watermark="-novr -console -vconsole +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1"
                              Height="80"
                              AcceptsReturn="True"/>
+                </StackPanel>
+            </Border>
+
+            
+            <!-- Uninstall -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Uninstall Mod" FontWeight="Bold"/>
+                    <TextBlock Text="This will run Steam's verify game files tool which removes the NoVR mod. You will need to reinstall it afterwards."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <Button Content="Uninstall Mod"
+                            Command="{Binding UninstallModCommand}"
+                            HorizontalAlignment="Left"
+                            Foreground="White"
+                            Background="#8B0000"/>
                 </StackPanel>
             </Border>
 

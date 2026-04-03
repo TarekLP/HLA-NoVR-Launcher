@@ -35,9 +35,6 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		[ObservableProperty]
 		private bool _updateAvailable;
 
-		[ObservableProperty]
-		private bool _isMuted;
-
 		public string StatusMessage => _status switch
 		{
 			LauncherStatus.Ready => "Ready to Launch (NoVR)",
@@ -58,7 +55,6 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		public HomeViewModel()
 		{
 			var settings = _settingsService.LoadSettings();
-			_isMuted = settings.IsMuted;
 			UpdateStatus();
 			_ = CheckForUpdatesAsync();
 		}
@@ -71,12 +67,6 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		partial void OnUpdateAvailableChanged(bool value)
 		{
 			OnPropertyChanged(nameof(InstallButtonText));
-		}
-		partial void OnIsMutedChanged(bool value)
-		{
-			var settings = _settingsService.LoadSettings();
-			settings.IsMuted = value;
-			_settingsService.SaveSettings(settings);
 		}
 
 		[RelayCommand(CanExecute = nameof(CanLaunch))]
@@ -122,7 +112,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 
 			await _versioner.InstallOrUpdateModAsync(
 				gamePath,
-				branch: "main",
+				branch: settings.ModBranch,
 				onProgress: progress,
 				onStatus: msg => Dispatcher.UIThread.Post(() =>
 					InstallStatusMessage = msg),
@@ -156,7 +146,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 				return;
 			}
 
-			UpdateAvailable = await _versioner.IsModUpdateAvailableAsync(installedVersion);
+			UpdateAvailable = await _versioner.IsModUpdateAvailableAsync(installedVersion, settings.ModBranch);
 		}
 
 		public void UpdateStatus()
