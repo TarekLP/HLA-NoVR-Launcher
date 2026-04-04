@@ -12,17 +12,16 @@
     <Grid ColumnDefinitions="Auto, *">
 
         <!-- Sidebar -->
-    <Border Grid.Column="0"
-            Width="{Binding SidebarWidth}"
-            Classes.open="{Binding IsSidebarOpen}"
-            Background="{StaticResource Brush.Surface}"
-            BorderBrush="{StaticResource Brush.Border}"
-            BorderThickness="0,0,1,0"
-            ClipToBounds="True">
+        <Border Grid.Column="0"
+                Width="{Binding SidebarWidth}"
+                Background="{StaticResource Brush.Surface}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,0,1,0"
+                ClipToBounds="True">
 
             <DockPanel>
 
-                <!-- Toggle button + title -->
+                <!-- Top: toggle + title -->
                 <StackPanel DockPanel.Dock="Top" Spacing="0">
                     <Button Command="{Binding ToggleSidebarCommand}"
                             HorizontalAlignment="Stretch"
@@ -31,18 +30,70 @@
                             Padding="12,10">
                         <TextBlock Text="☰"
                                    FontSize="18"
-                                   Foreground="{StaticResource Brush.Accent}"/>
+                                   Foreground="{StaticResource Brush.TextSecondary}"/>
                     </Button>
 
                     <TextBlock Text="Half-Life: Alyx NoVR"
                                IsVisible="{Binding IsSidebarOpen}"
                                FontWeight="Black"
                                FontSize="15"
-                               Foreground="{StaticResource Brush.Accent}"
+                               Foreground="{StaticResource Brush.TextSecondary}"
                                Margin="16,4,16,16"
                                TextWrapping="Wrap"/>
 
                     <Separator/>
+                </StackPanel>
+
+                <!-- Bottom: version + update banner -->
+                <StackPanel DockPanel.Dock="Bottom"
+                            Margin="8,0,8,12"
+                            Spacing="8"
+                            IsVisible="{Binding IsSidebarOpen}">
+
+                    <Separator/>
+
+                    <!-- Loading spinner while checking -->
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="8"
+                                IsVisible="{Binding IsCheckingForUpdates}"
+                                Margin="8,4,0,0">
+                        <TextBlock Text="⟳"
+                                   FontSize="14"
+                                   Foreground="{StaticResource Brush.TextSecondary}"/>
+                        <TextBlock Text="Checking for updates..."
+                                   FontSize="11"
+                                   Foreground="{StaticResource Brush.TextSecondary}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Update available banner -->
+                    <Border IsVisible="{Binding LauncherUpdateAvailable}"
+                            Background="{StaticResource Brush.Accent}"
+                            CornerRadius="6"
+                            Padding="10,8">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Update Available!"
+                                       FontWeight="Bold"
+                                       FontSize="12"
+                                       Foreground="White"/>
+                            <TextBlock Text="{Binding LatestLauncherVersion}"
+                                       FontSize="11"
+                                       Foreground="White"/>
+                            <Button Content="Download Update"
+                                    Command="{Binding OpenReleasesPageCommand}"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Center"
+                                    FontSize="11"
+                                    Padding="0,4"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Launcher version -->
+                    <TextBlock Text="{Binding LauncherVersion}"
+                               FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               Margin="8,0,0,0"/>
+
                 </StackPanel>
 
                 <!-- Nav buttons -->
@@ -59,7 +110,8 @@
                             <TextBlock Text="🏠" FontSize="16"/>
                             <TextBlock Text="Home"
                                        IsVisible="{Binding IsSidebarOpen}"
-                                       VerticalAlignment="Center"/>
+                                       VerticalAlignment="Center"
+                                       TextAlignment="Center"/>
                         </StackPanel>
                     </Button>
 
@@ -72,7 +124,8 @@
                             <TextBlock Text="⚙" FontSize="16"/>
                             <TextBlock Text="Settings"
                                        IsVisible="{Binding IsSidebarOpen}"
-                                       VerticalAlignment="Center"/>
+                                       VerticalAlignment="Center"
+                                       TextAlignment="Center"/>
                         </StackPanel>
                     </Button>
 

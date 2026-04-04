@@ -60,6 +60,10 @@
                                TextAlignment="Center"
                                TextWrapping="Wrap"/>
                 </StackPanel>
+                <TextBlock Text="{Binding InstalledModVersion}"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           FontSize="11"
+                           HorizontalAlignment="Center"/>
 
             </StackPanel>
 

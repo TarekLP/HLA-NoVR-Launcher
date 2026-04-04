@@ -24,6 +24,26 @@
                 </StackPanel>
             </Border>
 
+            <!-- Game Path -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Game Path" FontWeight="Bold"/>
+                    <TextBlock Text="Override the auto-detected Half-Life: Alyx installation path."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <Grid ColumnDefinitions="*, Auto">
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding GamePath}"
+                                 Watermark="Auto-detected from Steam..."
+                                 Margin="0,0,8,0"/>
+                        <Button Grid.Column="1"
+                                Content="Browse"
+                                Command="{Binding BrowseGamePathCommand}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- Audio -->
             <Border Classes="card" Padding="20">
                 <StackPanel Spacing="15">
@@ -40,18 +60,92 @@
                 </StackPanel>
             </Border>
 
-            <!-- Launch Arguments -->
+            <!-- Launcher Behaviour -->
             <Border Classes="card" Padding="20">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="Launch Arguments" FontWeight="Bold"/>
-                    <TextBox Text="{Binding Settings.CustomLaunchArgs}"
-                             Watermark="-novr -console -vconsole +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1"
-                             Height="80"
-                             AcceptsReturn="True"/>
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Launcher Behaviour" FontWeight="Bold"/>
+                    <CheckBox Content="Minimize launcher when game starts"
+                              IsChecked="{Binding Settings.CloseLauncherOnStart}"/>
                 </StackPanel>
             </Border>
 
-            
+<!-- Launch Options -->
+<Border Classes="card" Padding="20">
+    <StackPanel Spacing="15">
+        <TextBlock Text="Launch Options" FontWeight="Bold"/>
+
+        <!-- Window mode -->
+        <TextBlock Text="Window Mode"
+                   FontSize="12"
+                   Foreground="{StaticResource Brush.TextSecondary}"/>
+        <StackPanel Spacing="8">
+            <CheckBox Content="Windowed (-window)"
+                      IsChecked="{Binding Settings.Windowed}"/>
+            <CheckBox Content="Fullscreen (custom resolution)"
+                      IsChecked="{Binding Settings.Fullscreen}"/>
+
+            <!-- Resolution picker — only visible when fullscreen is checked -->
+            <StackPanel IsVisible="{Binding Settings.Fullscreen}"
+                        Orientation="Horizontal"
+                        Spacing="10"
+                        Margin="24,0,0,0">
+                <ComboBox ItemsSource="{Binding CommonResolutions}"
+                          SelectedItem="{Binding SelectedResolution}"
+                          Width="150"/>
+                <!-- Custom width/height inputs -->
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6"
+                            IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBox Text="{Binding Settings.FullscreenWidth}"
+                             Width="70"
+                             Watermark="Width"
+                             IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static ObjectConverters.Equal},
+                                ConverterParameter=Custom}"/>
+                    <TextBlock Text="x"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static ObjectConverters.Equal},
+                                ConverterParameter=Custom}"/>
+                    <TextBox Text="{Binding Settings.FullscreenHeight}"
+                             Width="70"
+                             Watermark="Height"
+                             IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static ObjectConverters.Equal},
+                                ConverterParameter=Custom}"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+
+        <Separator/>
+
+        <!-- Other options -->
+        <TextBlock Text="Other"
+                   FontSize="12"
+                   Foreground="{StaticResource Brush.TextSecondary}"/>
+        <StackPanel Spacing="8">
+            <CheckBox Content="Default Menu (-defaultmenu)"
+                      IsChecked="{Binding Settings.DefaultMenu}"/>
+            <CheckBox Content="Enable VSync (-vsync)"
+                      IsChecked="{Binding Settings.VSync}"/>
+            <CheckBox Content="Enable Console (-console -vconsole)"
+                      IsChecked="{Binding Settings.EnableConsole}"/>
+        </StackPanel>
+
+        <Separator/>
+
+        <!-- Advanced / custom args -->
+        <TextBlock Text="Advanced — Custom Arguments"
+                   FontSize="12"
+                   Foreground="{StaticResource Brush.TextSecondary}"/>
+        <TextBox Text="{Binding Settings.CustomLaunchArgs}"
+                 Watermark="Additional args appended at the end..."
+                 Height="40"
+                 FontSize="12"/>
+    </StackPanel>
+</Border>
+
             <!-- Uninstall -->
             <Border Classes="card" Padding="20">
                 <StackPanel Spacing="10">
@@ -68,10 +162,6 @@
                 </StackPanel>
             </Border>
 
-            <Button Content="Save Settings"
-                    Classes="accent"
-                    Command="{Binding SaveSettingsCommand}"
-                    HorizontalAlignment="Right"/>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

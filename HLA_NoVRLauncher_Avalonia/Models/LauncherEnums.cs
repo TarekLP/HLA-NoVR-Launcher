@@ -10,6 +10,7 @@ namespace HLA_NoVRLauncher_Avalonia.Models
 		GameRunning,
 		MissingFiles,
 		SteamNotFound,
-		CheckingStatus
+		CheckingStatus,
+		ModNotInstalled
 	}
 }

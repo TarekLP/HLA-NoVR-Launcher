@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using HLA_NoVRLauncher_Avalonia.ViewModels;
 
 namespace HLA_NoVRLauncher_Avalonia.Views
 {
@@ -7,6 +8,30 @@ namespace HLA_NoVRLauncher_Avalonia.Views
 		public MainWindow()
 		{
 			InitializeComponent();
+
+			DataContextChanged += (_, _) =>
+			{
+				if (DataContext is MainWindowViewModel vm)
+					vm.PropertyChanged += OnViewModelPropertyChanged;
+			};
+		}
+
+		private void OnViewModelPropertyChanged(object? sender,
+			System.ComponentModel.PropertyChangedEventArgs e)
+		{
+			if (e.PropertyName == nameof(MainWindowViewModel.CurrentPage))
+			{
+				if (DataContext is MainWindowViewModel vm &&
+					vm.CurrentPage is HomeViewModel homeVm)
+				{
+					homeVm.RequestCloseLauncher += OnRequestCloseLauncher;
+				}
+			}
+		}
+
+		private void OnRequestCloseLauncher()
+		{
+			WindowState = WindowState.Minimized;
 		}
 	}
 }

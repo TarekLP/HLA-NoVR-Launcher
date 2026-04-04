@@ -80,11 +80,16 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			string? latest = await GetLatestLauncherVersionAsync();
 			if (latest == null) return false;
 
-			// Strip leading 'v' if present e.g. "v4.2.4" -> "4.2.4"
 			latest = latest.TrimStart('v');
 			currentVersion = currentVersion.TrimStart('v');
 
-			return latest != currentVersion;
+			if (Version.TryParse(latest, out var latestVersion) &&
+				Version.TryParse(currentVersion, out var currentParsed))
+			{
+				return latestVersion > currentParsed;
+			}
+
+			return false;
 		}
 
 		/// <summary>
@@ -211,6 +216,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				onError($"Installation failed: {ex.Message}");
 			}
 		}
+
 
 		/// <summary>
 		/// Reads the installed mod version from the local version.lua file.

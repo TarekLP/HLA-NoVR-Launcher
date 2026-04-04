@@ -35,6 +35,9 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		[ObservableProperty]
 		private bool _updateAvailable;
 
+		[ObservableProperty]
+		private string _installedModVersion = "";
+
 		public string StatusMessage => _status switch
 		{
 			LauncherStatus.Ready => "Ready to Launch (NoVR)",
@@ -42,19 +45,24 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			LauncherStatus.MissingFiles => "Half-Life: Alyx not found.",
 			LauncherStatus.SteamNotFound => "Steam installation not found.",
 			LauncherStatus.CheckingStatus => "Checking game status...",
+			LauncherStatus.ModNotInstalled => "Mod not installed — click Install!",
 			_ => "Unknown status."
 		};
 
-		public string InstallButtonText => _updateAvailable
-			? "Update Mod"
-			: "Check for Updates";
+		public string InstallButtonText => _status == LauncherStatus.ModNotInstalled
+			? "Install Mod"
+			: _updateAvailable
+				? "Update Mod"
+				: "Check for Updates";
 
 		public bool CanLaunch => !IsBusy;
 		public bool CanInstall => !IsBusy;
 
+		// Fired by MainWindow when it needs to close/minimize on launch
+		public event Action? RequestCloseLauncher;
+
 		public HomeViewModel()
 		{
-			var settings = _settingsService.LoadSettings();
 			UpdateStatus();
 			_ = CheckForUpdatesAsync();
 		}
@@ -62,11 +70,33 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		partial void OnStatusChanged(LauncherStatus value)
 		{
 			OnPropertyChanged(nameof(StatusMessage));
+			OnPropertyChanged(nameof(InstallButtonText));
 		}
 
 		partial void OnUpdateAvailableChanged(bool value)
 		{
 			OnPropertyChanged(nameof(InstallButtonText));
+		}
+		private string ResolveGamePath()
+		{
+			LauncherSettings settings = _settingsService.LoadSettings();
+
+			// Use manually saved path if set
+			if (!string.IsNullOrEmpty(settings.GamePath))
+				return settings.GamePath;
+
+			// Auto-detect and immediately save so it persists
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+			if (string.IsNullOrEmpty(steamPath))
+				return "";
+
+			string detectedPath = _gameService.GetDefaultGamePath(steamPath);
+
+			// Save it so future calls don't need to re-detect
+			settings.GamePath = detectedPath;
+			_settingsService.SaveSettings(settings);
+
+			return detectedPath;
 		}
 
 		[RelayCommand(CanExecute = nameof(CanLaunch))]
@@ -77,6 +107,9 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			LauncherSettings settings = _settingsService.LoadSettings();
 			_settingsService.SaveSettings(settings);
 
+			if (settings.CloseLauncherOnStart)
+				RequestCloseLauncher?.Invoke();
+
 			_launchService.LaunchGame(settings.CustomLaunchArgs, () =>
 			{
 				Dispatcher.UIThread.Post(() =>
@@ -84,12 +117,10 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 					IsBusy = false;
 					UpdateStatus();
 				});
-			});
+			}, settings);
 
 			await Task.CompletedTask;
 		}
-
-
 
 		[RelayCommand(CanExecute = nameof(CanInstall))]
 		private async Task InstallModAsync()
@@ -100,10 +131,15 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			InstallStatusMessage = "Starting...";
 
 			LauncherSettings settings = _settingsService.LoadSettings();
-			string steamPath = _gameService.GetSteamInstallPath() ?? "";
-			string gamePath = string.IsNullOrEmpty(settings.GamePath)
-				? _gameService.GetDefaultGamePath(steamPath)
-				: settings.GamePath;
+			string gamePath = ResolveGamePath();
+
+			if (string.IsNullOrEmpty(gamePath))
+			{
+				InstallStatusMessage = "Could not find game path. Please set it in Settings.";
+				IsInstalling = false;
+				IsBusy = false;
+				return;
+			}
 
 			var progress = new Progress<double>(p =>
 			{
@@ -134,19 +170,27 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		public async Task CheckForUpdatesAsync()
 		{
 			LauncherSettings settings = _settingsService.LoadSettings();
-			string steamPath = _gameService.GetSteamInstallPath() ?? "";
-			string gamePath = string.IsNullOrEmpty(settings.GamePath)
-				? _gameService.GetDefaultGamePath(steamPath)
-				: settings.GamePath;
+			string gamePath = ResolveGamePath();
 
-			string? installedVersion = _versioner.GetInstalledModVersion(gamePath);
-			if (installedVersion == null)
+			if (string.IsNullOrEmpty(gamePath))
 			{
+				InstalledModVersion = "Mod not installed";
 				UpdateAvailable = false;
 				return;
 			}
 
-			UpdateAvailable = await _versioner.IsModUpdateAvailableAsync(installedVersion, settings.ModBranch);
+			string? installedVersion = _versioner.GetInstalledModVersion(gamePath);
+
+			if (installedVersion == null)
+			{
+				InstalledModVersion = "Mod not installed";
+				UpdateAvailable = false;
+				return;
+			}
+
+			InstalledModVersion = $"Mod version: v{installedVersion}";
+			UpdateAvailable = await _versioner.IsModUpdateAvailableAsync(
+				installedVersion, settings.ModBranch);
 		}
 
 		public void UpdateStatus()
@@ -159,14 +203,22 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 				return;
 			}
 
-			LauncherSettings settings = _settingsService.LoadSettings();
-			string gamePath = string.IsNullOrEmpty(settings.GamePath)
-				? _gameService.GetDefaultGamePath(steamPath)
-				: settings.GamePath;
+			string gamePath = ResolveGamePath();
 
-			Status = _gameService.IsGameInstalled(gamePath)
-				? LauncherStatus.Ready
-				: LauncherStatus.MissingFiles;
+			if (string.IsNullOrEmpty(gamePath) || !_gameService.IsGameInstalled(gamePath))
+			{
+				Status = LauncherStatus.MissingFiles;
+				return;
+			}
+
+			string? modVersion = _versioner.GetInstalledModVersion(gamePath);
+			if (modVersion == null)
+			{
+				Status = LauncherStatus.ModNotInstalled;
+				return;
+			}
+
+			Status = LauncherStatus.Ready;
 		}
 	}
 }

@@ -79,7 +79,35 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		public string GetDefaultGamePath(string steamPath)
 		{
-			return Path.Combine(steamPath, "steamapps", "common", GameFolderName);
+			// First check the default Steam library
+			string defaultPath = Path.Combine(steamPath, "steamapps", "common", GameFolderName);
+			if (Directory.Exists(defaultPath))
+				return defaultPath;
+
+			// Check additional Steam library folders from libraryfolders.vdf
+			string vdfPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+			if (File.Exists(vdfPath))
+			{
+				foreach (var line in File.ReadAllLines(vdfPath))
+				{
+					// VDF lines with library paths look like:  "path"  "D:\\SteamLibrary"
+					if (!line.TrimStart().StartsWith("\"path\""))
+						continue;
+
+					var parts = line.Split('"');
+					if (parts.Length < 4) continue;
+
+					string libraryPath = parts[3].Replace("\\\\", "\\");
+					string gamePath = Path.Combine(
+						libraryPath, "steamapps", "common", GameFolderName);
+
+					if (Directory.Exists(gamePath))
+						return gamePath;
+				}
+			}
+
+			// Fall back to default even if it doesn't exist
+			return defaultPath;
 		}
 
 		public bool IsGameInstalled(string gamePath)
@@ -105,10 +133,36 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
 		private const string AppId = "546560";
 
-		public void LaunchGame(string extraArgs, Action onExited)
+		public void LaunchGame(string extraArgs, Action onExited, LauncherSettings settings)
 		{
-			string args = $"-novr -console -vconsole +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 {extraArgs}".Trim();
-			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(args)}";
+#if DEBUG
+			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0 -condebug";
+#else
+				const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
+#endif
+
+			// Build managed args from settings checkboxes
+			var managedArgs = new System.Text.StringBuilder();
+
+			if (settings.Windowed)
+				managedArgs.Append(" -window");
+
+			if (settings.Fullscreen)
+				managedArgs.Append($" -w {settings.FullscreenWidth} -h {settings.FullscreenHeight}");
+
+			if (settings.DefaultMenu)
+				managedArgs.Append(" -defaultmenu");
+
+			if (settings.VSync)
+				managedArgs.Append(" -vsync");
+
+			if (settings.EnableConsole)
+				managedArgs.Append(" -console -vconsole");
+
+			string allArgs = $"{baseArgs}{managedArgs}" +
+							 (string.IsNullOrWhiteSpace(extraArgs) ? "" : $" {extraArgs.Trim()}");
+
+			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(allArgs)}";
 
 			Process.Start(new ProcessStartInfo
 			{
