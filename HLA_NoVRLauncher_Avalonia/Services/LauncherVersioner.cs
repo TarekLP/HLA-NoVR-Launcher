@@ -14,7 +14,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		private const string ModRepo = "HLA-NoVR";
 		private const string LauncherRepo = "HLA-NoVR-Launcher";
 
-		private readonly HttpClient _http = new();
+		private readonly HttpClient _http = new(new HttpClientHandler())
+		{
+			DefaultRequestHeaders =
+			{
+				{ "User-Agent", "HLA-NoVR-Launcher" }
+			}
+		};
 
 		// Launcher Version Checking
 		/// <summary>
@@ -26,7 +32,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			try
 			{
 				string url = $"https://api.github.com/repos/{GitHubUser}/{LauncherRepo}/releases/latest";
-				_http.DefaultRequestHeaders.UserAgent.TryParseAdd("HLA-NoVR-Launcher");
+
 
 				string json = await _http.GetStringAsync(url);
 				using var doc = JsonDocument.Parse(json);
@@ -52,15 +58,14 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				string url = $"https://raw.githubusercontent.com/{GitHubUser}/{ModRepo}/{branch}/game/hlvr/scripts/vscripts/version.lua";
 				string content = await _http.GetStringAsync(url);
 
-				// version.lua contains a line like: version = "1.2.3"
 				foreach (var line in content.Split('\n'))
 				{
-					if (line.TrimStart().StartsWith("version"))
+					if (line.Contains("NoVR Version:"))
 					{
-						int start = line.IndexOf('"') + 1;
+						int start = line.IndexOf("NoVR Version:") + "NoVR Version:".Length;
 						int end = line.LastIndexOf('"');
 						if (start > 0 && end > start)
-							return line.Substring(start, end - start);
+							return line.Substring(start, end - start).Trim();
 					}
 				}
 
@@ -99,7 +104,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		{
 			string? latest = await GetLatestModVersionAsync(branch);
 			if (latest == null) return false;
-			return latest != installedVersion.TrimStart('v');
+
+			// Both are date strings like "Jan 04 15:08 mods" — simple string comparison
+			return latest.Trim() != installedVersion.Trim();
 		}
 
 		//  Mod Installer / Updater
@@ -126,7 +133,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				{
 					onStatus("Fetching latest mod release info...");
 					string releaseUrl = $"https://api.github.com/repos/{GitHubUser}/{ModRepo}/releases/latest";
-					_http.DefaultRequestHeaders.UserAgent.TryParseAdd("HLA-NoVR-Launcher");
+
 
 					string releaseJson = await _http.GetStringAsync(releaseUrl);
 					using var doc = JsonDocument.Parse(releaseJson);
@@ -234,12 +241,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			{
 				foreach (var line in File.ReadAllLines(versionFile))
 				{
-					if (line.TrimStart().StartsWith("version"))
+					if (line.Contains("NoVR Version:"))
 					{
-						int start = line.IndexOf('"') + 1;
+						// Extract everything after "NoVR Version: "
+						int start = line.IndexOf("NoVR Version:") + "NoVR Version:".Length;
 						int end = line.LastIndexOf('"');
 						if (start > 0 && end > start)
-							return line.Substring(start, end - start);
+							return line.Substring(start, end - start).Trim();
 					}
 				}
 			}

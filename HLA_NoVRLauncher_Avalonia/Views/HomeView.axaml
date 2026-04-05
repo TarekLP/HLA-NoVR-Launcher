@@ -83,6 +83,15 @@
                 </StackPanel>
             </Border>
 
+            <!-- Quick Setup Button -->
+            <Button Grid.Column="1"
+                    Content="⚡ Quick Setup"
+                    Command="{Binding QuickSetupCommand}"
+                    Classes="accent"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,16,8"
+                    FontSize="12"
+                    Padding="12,6"/>
         </Grid>
 
     </Panel>

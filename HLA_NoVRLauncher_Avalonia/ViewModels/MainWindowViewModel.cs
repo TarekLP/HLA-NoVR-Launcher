@@ -2,6 +2,8 @@
 using CommunityToolkit.Mvvm.Input;
 using HLA_NoVRLauncher_Avalonia.Models;
 using HLA_NoVRLauncher_Avalonia.Services;
+using HLA_NoVRLauncher_Avalonia.Views;
+using System;
 using System.Diagnostics;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -38,7 +40,22 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		public MainWindowViewModel()
 		{
 			_settings = _settingsService.LoadSettings();
-			_currentPage = new HomeViewModel();
+
+			if (_settings.FirstRun)
+			{
+				var setup = new SetupViewModel();
+				setup.SetupComplete += () =>
+				{
+					_settings = _settingsService.LoadSettings();
+					CurrentPage = new HomeViewModel();
+				};
+				_currentPage = setup;
+			}
+			else
+			{
+				_currentPage = new HomeViewModel();
+			}
+
 			_ = CheckForLauncherUpdateAsync();
 		}
 
@@ -82,13 +99,49 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
 
 		[RelayCommand]
-		private void NavigateMain() => CurrentPage = new HomeViewModel();
+		private void NavigateMain()
+		{
+			if (_settings.FirstRun)
+			{
+				var setup = new SetupViewModel();
+				setup.SetupComplete += () =>
+				{
+					_settings = _settingsService.LoadSettings();
+					CurrentPage = new HomeViewModel();
+				};
+				CurrentPage = setup;
+			}
+			else
+			{
+				CurrentPage = new HomeViewModel();
+			}
+		}
+
+		[RelayCommand]
+		private void RunSetup()
+		{
+			var setup = new SetupViewModel();
+			setup.SetupComplete += () =>
+			{
+				_settings = _settingsService.LoadSettings();
+				CurrentPage = new HomeViewModel();
+			};
+			CurrentPage = setup;
+		}
 
 		[RelayCommand]
 		private void NavigateSettings()
 		{
 			_settings = _settingsService.LoadSettings();
 			CurrentPage = new SettingsViewModel(_settings);
+		}
+		
+		public event Action? RequestSetup;
+
+		[RelayCommand]
+		private void QuickSetup()
+		{
+			RequestSetup?.Invoke();
 		}
 	}
 }

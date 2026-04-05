@@ -11,7 +11,7 @@ namespace HLA_NoVRLauncher_Avalonia.Models
 		[ObservableProperty] private string _customLaunchArgs = string.Empty;
 		[ObservableProperty] private bool _autoLaunch = false;
 		[ObservableProperty] private bool _closeLauncherOnStart = true;
-		[ObservableProperty] private bool _isMuted = false;
+		[ObservableProperty] private bool _isMuted = true;
 		[ObservableProperty] private string _modBranch = "main";
 		// HLVR Launch Options
 		[ObservableProperty] private bool _windowed = false;
@@ -21,5 +21,8 @@ namespace HLA_NoVRLauncher_Avalonia.Models
 		[ObservableProperty] private bool _defaultMenu = false;
 		[ObservableProperty] private bool _vSync = false;
 		[ObservableProperty] private bool _enableConsole = true;
+
+		// Is this the First Time the Launcher is running?
+		[ObservableProperty] private bool _firstRun = true;
 	}
 }

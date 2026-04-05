@@ -132,6 +132,9 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 
 			LauncherSettings settings = _settingsService.LoadSettings();
 			string gamePath = ResolveGamePath();
+			System.Diagnostics.Debug.WriteLine($"Game path: {gamePath}");
+			System.Diagnostics.Debug.WriteLine($"Version file exists: {System.IO.File.Exists(System.IO.Path.Combine(gamePath, "game", "hlvr", "scripts", "vscripts", "version.lua"))}");
+			System.Diagnostics.Debug.WriteLine($"Game installed: {_gameService.IsGameInstalled(gamePath)}");
 
 			if (string.IsNullOrEmpty(gamePath))
 			{
@@ -188,7 +191,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 				return;
 			}
 
-			InstalledModVersion = $"Mod version: v{installedVersion}";
+			InstalledModVersion = $"Mod version: {installedVersion}";
 			UpdateAvailable = await _versioner.IsModUpdateAvailableAsync(
 				installedVersion, settings.ModBranch);
 		}
@@ -219,6 +222,14 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			}
 
 			Status = LauncherStatus.Ready;
+		}
+		
+		public event Action? RequestSetup;
+
+		[RelayCommand]
+		private void QuickSetup()
+		{
+			RequestSetup?.Invoke();
 		}
 	}
 }
