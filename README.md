@@ -23,7 +23,7 @@
 ### Windows
 1. Download the [latest release](https://github.com/HLANoVR/HLA-NoVR-Launcher/releases).
 2. Drop the exe into a folder and run it.
-3. Under the Settings page, go to the Game path section and select the Half-Life: Alyx folder (the one containing the `game` and `content` folders) using the `Browse` Button.
+3. Go through the Firs time setup to adjust everything, then once done click the install button.
 4. Click "Play" and profit.
 
 ### Steam Deck / Linux
