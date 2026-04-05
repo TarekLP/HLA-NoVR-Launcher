@@ -11,7 +11,6 @@
 
     <Grid ColumnDefinitions="Auto, *">
 
-        <!-- Sidebar -->
         <Border Grid.Column="0"
                 Width="{Binding SidebarWidth}"
                 Background="{StaticResource Brush.Surface}"
@@ -20,8 +19,6 @@
                 ClipToBounds="True">
 
             <DockPanel>
-
-                <!-- Top: toggle + title -->
                 <StackPanel DockPanel.Dock="Top" Spacing="0">
                     <Button Command="{Binding ToggleSidebarCommand}"
                             HorizontalAlignment="Stretch"
@@ -44,7 +41,6 @@
                     <Separator/>
                 </StackPanel>
 
-                <!-- Bottom: version + update banner -->
                 <StackPanel DockPanel.Dock="Bottom"
                             Margin="8,0,8,12"
                             Spacing="8"
@@ -52,7 +48,6 @@
 
                     <Separator/>
 
-                    <!-- Loading spinner while checking -->
                     <StackPanel Orientation="Horizontal"
                                 Spacing="8"
                                 IsVisible="{Binding IsCheckingForUpdates}"
@@ -66,7 +61,6 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <!-- Update available banner -->
                     <Border IsVisible="{Binding LauncherUpdateAvailable}"
                             Background="{StaticResource Brush.Accent}"
                             CornerRadius="6"
@@ -88,19 +82,13 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Launcher version -->
                     <TextBlock Text="{Binding LauncherVersion}"
                                FontSize="11"
                                Foreground="{StaticResource Brush.TextSecondary}"
                                Margin="8,0,0,0"/>
-
                 </StackPanel>
 
-                <!-- Nav buttons -->
-                <StackPanel DockPanel.Dock="Top"
-                            Spacing="4"
-                            Margin="8,8,8,0">
-
+                <StackPanel Spacing="4" Margin="8,8,8,0">
                     <Button Command="{Binding NavigateMainCommand}"
                             HorizontalAlignment="Stretch"
                             HorizontalContentAlignment="Left"
@@ -110,8 +98,7 @@
                             <TextBlock Text="🏠" FontSize="16"/>
                             <TextBlock Text="Home"
                                        IsVisible="{Binding IsSidebarOpen}"
-                                       VerticalAlignment="Center"
-                                       TextAlignment="Center"/>
+                                       VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
 
@@ -124,17 +111,26 @@
                             <TextBlock Text="⚙" FontSize="16"/>
                             <TextBlock Text="Settings"
                                        IsVisible="{Binding IsSidebarOpen}"
-                                       VerticalAlignment="Center"
-                                       TextAlignment="Center"/>
+                                       VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
 
+                    <Button Command="{Binding NavigateLogCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="10,8"
+                            ToolTip.Tip="Crash Log">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="📋" FontSize="16"/>
+                            <TextBlock Text="Crash Log"
+                                       IsVisible="{Binding IsSidebarOpen}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
-
             </DockPanel>
         </Border>
 
-        <!-- Main content area -->
         <ContentControl Grid.Column="1"
                         Content="{Binding CurrentPage}">
             <ContentControl.DataTemplates>
@@ -146,6 +142,9 @@
                 </DataTemplate>
                 <DataTemplate DataType="{x:Type vm:SetupViewModel}">
                     <views:SetupView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:CrashLogViewModel}">
+                    <views:CrashLogView />
                 </DataTemplate>
             </ContentControl.DataTemplates>
         </ContentControl>

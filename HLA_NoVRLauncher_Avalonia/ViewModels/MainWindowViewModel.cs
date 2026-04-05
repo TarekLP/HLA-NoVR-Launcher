@@ -143,5 +143,8 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		{
 			RequestSetup?.Invoke();
 		}
+		
+		[RelayCommand]
+		private void NavigateLog() => CurrentPage = new CrashLogViewModel();
 	}
 }
