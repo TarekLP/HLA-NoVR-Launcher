@@ -11,10 +11,11 @@
 ---
 ## Features
 
-### A modernised UI
+### A modernised UI - Including a First Time Setup
 ### Fallback Version installation - Incase of HTTP Errors / Wonky Internet (Refer to the Information Section)
 ### Settings saving inside a .json file for easy editing
 ### Improved Handling and Logic upgrades (You wont really notice this but it helps with Development of better features)
+### Crash Log Viewer for easy Error Finding and reporting of Bugs
 
 
 ## Installation
@@ -36,8 +37,7 @@ Name it: "hla_novr_mod".
 Drop the `zip` into a Folder titled `Fallback` that's next to the EXE.
 The final file path will look something like this: `HLA-NoVR-Launcher\Fallback\hla_novr_mod.zip`.
 
-### Disclaimers
-* **Folder Selection:** You'll have to select the game path folder yourself, this option is under settings where you can click the `Browse` button and navigate to your **Half-Life Alyx** installation directory (the one containing the `game` and `content` folders).
+### Disclaimer
 * **Compatibility:** Only official copies of the game purchased on Steam are supported.
 
 ###  Credits
