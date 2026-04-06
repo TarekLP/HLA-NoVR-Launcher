@@ -154,7 +154,7 @@
             <Border Classes="card" Padding="20">
                 <StackPanel Spacing="10">
                     <TextBlock Text="Uninstall Mod" FontWeight="Bold"/>
-                    <TextBlock Text="This will run Steam's verify game files tool which removes the NoVR mod. You will need to reinstall it afterwards."
+                    <TextBlock Text="This will restore the backed up files from the installation. You will need to reinstall it afterwards."
                                Foreground="{StaticResource Brush.TextSecondary}"
                                TextWrapping="Wrap"
                                FontSize="12"/>

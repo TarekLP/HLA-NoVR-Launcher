@@ -134,15 +134,19 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
                 GamePath = folders[0].Path.LocalPath;
         }
 
-        [RelayCommand]
-        private void UninstallMod()
-        {
-            string verifyLink = _gameService.GetVerifyLink();
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = verifyLink,
-                UseShellExecute = true
-            });
-        }
-    }
+		[RelayCommand]
+		private async Task UninstallModAsync()
+		{
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+			string gamePath = string.IsNullOrEmpty(_settings.GamePath)
+				? _gameService.GetDefaultGamePath(steamPath)
+				: _settings.GamePath;
+
+			await Task.Run(() => new LauncherVersioner().UninstallMod(
+				gamePath,
+				onStatus: msg => System.Diagnostics.Debug.WriteLine(msg),
+				onError: err => System.Diagnostics.Debug.WriteLine(err)
+			));
+		}
+	}
 }
