@@ -147,8 +147,39 @@
                  Watermark="Additional args appended at the end..."
                  Height="40"
                  FontSize="12"/>
-    </StackPanel>
-</Border>
+            </StackPanel>
+        </Border>
+            <!-- Backup Location -->
+        <Border Classes="card" Padding="20">
+            <StackPanel Spacing="15">
+                <TextBlock Text="Backup Location" FontWeight="Bold"/>
+                <TextBlock Text="Where to store backups of original game files (skill_manifest.cfg and gameinfo.gi) before installing the mod."
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap"
+                           FontSize="12"/>
+                <ComboBox HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding BackupLocations}"
+                          SelectedItem="{Binding Settings.BackupLocation}"/>
+                <TextBlock FontSize="11"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap">
+                    <Run Text="Launcher"/>
+                    <Run Text=" — next to the launcher exe (recommended)"/>
+                </TextBlock>
+                <TextBlock FontSize="11"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap">
+                    <Run Text="Game Folder"/>
+                    <Run Text=" — inside the Half-Life: Alyx folder"/>
+                </TextBlock>
+                <TextBlock FontSize="11"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap">
+                    <Run Text="AppData"/>
+                    <Run Text=" — %AppData%\HLA_NoVRLauncher\backup"/>
+                </TextBlock>
+            </StackPanel>
+        </Border>
 
             <!-- Uninstall -->
             <Border Classes="card" Padding="20">

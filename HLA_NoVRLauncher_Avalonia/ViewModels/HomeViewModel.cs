@@ -175,6 +175,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			await Task.Run(() => _versioner.InstallFromZip(
 				zipPath,
 				gamePath,
+				settings.BackupLocation,
 				progress,
 				msg => Dispatcher.UIThread.Post(() => InstallStatusMessage = msg),
 				err => Dispatcher.UIThread.Post(() =>

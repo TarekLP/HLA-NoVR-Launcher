@@ -46,11 +46,18 @@
     <Setter Property="Padding" Value="16,8"/>
     <Setter Property="CornerRadius" Value="6"/>
   </Style>
+  <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="CornerRadius" Value="6"/>
+  </Style>
   <Style Selector="Button:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
   </Style>
 
   <Style Selector="Button.accent">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
   </Style>
   <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
@@ -184,10 +191,10 @@
   <Style Selector="Expander /template/ ToggleButton#ExpanderHeader">
     <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
   </Style>
+
   <Style Selector="TextBlock.validPath">
     <Setter Property="Foreground" Value="#1DB954"/>
   </Style>
-
   <Style Selector="TextBlock.invalidPath">
     <Setter Property="Foreground" Value="#E53935"/>
   </Style>

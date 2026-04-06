@@ -54,8 +54,18 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			"game/novr_viewmodels"
 		};
 
-		private static string BackupPath(string gamePath) =>
-			Path.Combine(gamePath, ".novr_launcher_backup");
+		public static string BackupPath(string gamePath, string backupLocation) =>
+			backupLocation switch
+			{
+				"Game Folder" => Path.Combine(gamePath, ".novr_launcher_backup"),
+				"AppData" => Path.Combine(
+									 Environment.GetFolderPath(
+										 Environment.SpecialFolder.ApplicationData),
+									 "HLA_NoVRLauncher", "backup"),
+				_ => Path.Combine(
+									 AppDomain.CurrentDomain.BaseDirectory,
+									 ".novr_launcher_backup")
+			};
 
 		/// <summary>
 		/// Reads the installed mod version string from the local version.lua file.
@@ -139,6 +149,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		public void InstallFromZip(
 			string zipPath,
 			string gamePath,
+			string backupLocation,
 			IProgress<double> onProgress,
 			Action<string> onStatus,
 			Action<string> onError)
@@ -173,7 +184,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 				// Back up vanilla files before overwriting
 				onStatus("Backing up original game files...");
-				string backupDir = BackupPath(gamePath);
+				string backupDir = BackupPath(gamePath, backupLocation);
 				Directory.CreateDirectory(backupDir);
 
 				foreach (var fileToBackup in FilesToBackup)
@@ -231,8 +242,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		/// Uninstalls the mod by deleting mod-only files and folders,
 		/// then restoring backed-up vanilla files.
 		/// </summary>
-		public void UninstallMod(
+			public void UninstallMod(
 			string gamePath,
+			string backupLocation,
 			Action<string> onStatus,
 			Action<string> onError)
 		{
@@ -259,7 +271,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				}
 
 				// Restore backed-up vanilla files
-				string backupDir = BackupPath(gamePath);
+				string backupDir = BackupPath(gamePath, backupLocation);
 				if (Directory.Exists(backupDir))
 				{
 					onStatus("Restoring original game files...");

@@ -45,6 +45,12 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
             "3840x2160",
             "Custom"
         };
+		public List<string> BackupLocations { get; } = new()
+        {
+	        "Launcher",
+	        "Game Folder",
+	        "AppData"
+        };
 
 		public SettingsViewModel(LauncherSettings currentSettings)
 		{
@@ -144,6 +150,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 
 			await Task.Run(() => new LauncherVersioner().UninstallMod(
 				gamePath,
+				_settings.BackupLocation,
 				onStatus: msg => System.Diagnostics.Debug.WriteLine(msg),
 				onError: err => System.Diagnostics.Debug.WriteLine(err)
 			));

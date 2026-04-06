@@ -22,7 +22,8 @@ namespace HLA_NoVRLauncher_Avalonia.Models
 		[ObservableProperty] private bool _vSync = false;
 		[ObservableProperty] private bool _enableConsole = true;
 
-		// Is this the First Time the Launcher is running?
+		// Launcher Options
 		[ObservableProperty] private bool _firstRun = true;
+		[ObservableProperty] private string _backupLocation = "Launcher";
 	}
 }
