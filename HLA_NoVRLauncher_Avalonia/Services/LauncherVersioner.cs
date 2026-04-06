@@ -1,238 +1,20 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
-using System.Net.Http;
-using System.Text.Json;
-using System.Threading.Tasks;
-using HLA_NoVRLauncher_Avalonia.Models;
 
 namespace HLA_NoVRLauncher_Avalonia.Services
 {
 	public class LauncherVersioner
 	{
-		private const string GitHubUser = "HLANoVR";
-		private const string ModRepo = "HLA-NoVR";
-		private const string LauncherRepo = "HLA-NoVR-Launcher";
-
-		private readonly HttpClient _http = new(new HttpClientHandler())
-		{
-			DefaultRequestHeaders =
-			{
-				{ "User-Agent", "HLA-NoVR-Launcher" }
-			}
-		};
-
-		// Launcher Version Checking
-		/// <summary>
-		/// Fetches the latest launcher release tag from GitHub API.
-		/// Returns null if the request fails.
-		/// </summary>
-		public async Task<string?> GetLatestLauncherVersionAsync()
-		{
-			try
-			{
-				string url = $"https://api.github.com/repos/{GitHubUser}/{LauncherRepo}/releases/latest";
-
-
-				string json = await _http.GetStringAsync(url);
-				using var doc = JsonDocument.Parse(json);
-
-				return doc.RootElement
-						  .GetProperty("tag_name")
-						  .GetString();
-			}
-			catch
-			{
-				return null;
-			}
-		}
+		private const string VersionFilePath = "game/hlvr/scripts/vscripts/version.lua";
 
 		/// <summary>
-		/// Fetches the latest mod version string from the mod's version.lua file on GitHub.
-		/// Returns null if the request fails.
-		/// </summary>
-		public async Task<string?> GetLatestModVersionAsync(string branch = "main")
-		{
-			try
-			{
-				string url = $"https://raw.githubusercontent.com/{GitHubUser}/{ModRepo}/{branch}/game/hlvr/scripts/vscripts/version.lua";
-				string content = await _http.GetStringAsync(url);
-
-				foreach (var line in content.Split('\n'))
-				{
-					if (line.Contains("NoVR Version:"))
-					{
-						int start = line.IndexOf("NoVR Version:") + "NoVR Version:".Length;
-						int end = line.LastIndexOf('"');
-						if (start > 0 && end > start)
-							return line.Substring(start, end - start).Trim();
-					}
-				}
-
-				return null;
-			}
-			catch
-			{
-				return null;
-			}
-		}
-
-		/// <summary>
-		/// Compares the current launcher version against the latest GitHub release.
-		/// </summary>
-		public async Task<bool> IsLauncherUpdateAvailableAsync(string currentVersion)
-		{
-			string? latest = await GetLatestLauncherVersionAsync();
-			if (latest == null) return false;
-
-			latest = latest.TrimStart('v');
-			currentVersion = currentVersion.TrimStart('v');
-
-			if (Version.TryParse(latest, out var latestVersion) &&
-				Version.TryParse(currentVersion, out var currentParsed))
-			{
-				return latestVersion > currentParsed;
-			}
-
-			return false;
-		}
-
-		/// <summary>
-		/// Compares the installed mod version against the latest on GitHub.
-		/// </summary>
-		public async Task<bool> IsModUpdateAvailableAsync(string installedVersion, string branch = "main")
-		{
-			string? latest = await GetLatestModVersionAsync(branch);
-			if (latest == null) return false;
-
-			// Both are date strings like "Jan 04 15:08 mods" — simple string comparison
-			return latest.Trim() != installedVersion.Trim();
-		}
-
-		//  Mod Installer / Updater
-
-		/// <summary>
-		/// Downloads and installs the latest mod release into the game directory.
-		/// Reports progress via the onProgress callback (0.0 to 1.0).
-		/// Reports status messages via the onStatus callback.
-		/// </summary>
-		public async Task InstallOrUpdateModAsync(
-			string gamePath,
-			string branch,
-			IProgress<double> onProgress,
-			Action<string> onStatus,
-			Action<string> onError)
-		{
-			try
-			{
-				string tempZip = Path.Combine(Path.GetTempPath(), "hla_novr_mod.zip");
-
-				// Step 1 — try downloading from GitHub
-				bool downloadedFromWeb = false;
-				try
-				{
-					onStatus("Fetching latest mod release info...");
-					string releaseUrl = $"https://api.github.com/repos/{GitHubUser}/{ModRepo}/releases/latest";
-
-
-					string releaseJson = await _http.GetStringAsync(releaseUrl);
-					using var doc = JsonDocument.Parse(releaseJson);
-
-					string? downloadUrl = null;
-					foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
-					{
-						string? name = asset.GetProperty("name").GetString();
-						if (name != null && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-						{
-							downloadUrl = asset.GetProperty("browser_download_url").GetString();
-							break;
-						}
-					}
-
-					if (downloadUrl == null)
-						throw new Exception("No zip found in latest release.");
-
-					// Step 2 — download with progress
-					onStatus("Downloading mod files...");
-					using var response = await _http.GetAsync(
-						downloadUrl, HttpCompletionOption.ResponseHeadersRead);
-
-					long? totalBytes = response.Content.Headers.ContentLength;
-					using var contentStream = await response.Content.ReadAsStreamAsync();
-					using var fileStream = new FileStream(
-						tempZip, FileMode.Create, FileAccess.Write, FileShare.None);
-
-					byte[] buffer = new byte[81920];
-					long totalRead = 0;
-					int bytesRead;
-
-					while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
-					{
-						await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
-						totalRead += bytesRead;
-						if (totalBytes.HasValue)
-							onProgress.Report((double)totalRead / totalBytes.Value);
-					}
-
-					downloadedFromWeb = true;
-				}
-				catch (Exception ex)
-				{
-					// Web download failed — try local fallback
-					onStatus($"Online download failed ({ex.Message}), checking for local fallback...");
-
-					string localFallback = Path.Combine(
-						AppDomain.CurrentDomain.BaseDirectory,
-						"Fallback",
-						"hla_novr_mod.zip"
-					);
-
-					if (File.Exists(localFallback))
-					{
-						onStatus("Found local fallback, using that instead...");
-						File.Copy(localFallback, tempZip, overwrite: true);
-						onProgress.Report(1.0);
-					}
-					else
-					{
-						onError("Download failed and no local fallback was found. " +
-								"Please check your internet connection or add a fallback zip to the Fallback folder.");
-						return;
-					}
-				}
-
-				// Step 3 — extract into game directory
-				onStatus("Installing mod files...");
-				if (!Directory.Exists(gamePath))
-				{
-					onError($"Game path not found: {gamePath}");
-					return;
-				}
-
-				ZipFile.ExtractToDirectory(tempZip, gamePath, overwriteFiles: true);
-
-				// Step 4 — clean up temp zip
-				File.Delete(tempZip);
-
-				onStatus(downloadedFromWeb
-					? "Mod installed successfully from latest release!"
-					: "Mod installed successfully from local fallback!");
-			}
-			catch (Exception ex)
-			{
-				onError($"Installation failed: {ex.Message}");
-			}
-		}
-
-
-		/// <summary>
-		/// Reads the installed mod version from the local version.lua file.
-		/// Returns null if not installed or file is missing.
+		/// Reads the installed mod version string from the local version.lua file.
 		/// </summary>
 		public string? GetInstalledModVersion(string gamePath)
 		{
-			string versionFile = Path.Combine(
-				gamePath, "game", "hlvr", "scripts", "vscripts", "version.lua");
+			string versionFile = Path.Combine(gamePath,
+				"game", "hlvr", "scripts", "vscripts", "version.lua");
 
 			if (!File.Exists(versionFile))
 				return null;
@@ -243,7 +25,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				{
 					if (line.Contains("NoVR Version:"))
 					{
-						// Extract everything after "NoVR Version: "
 						int start = line.IndexOf("NoVR Version:") + "NoVR Version:".Length;
 						int end = line.LastIndexOf('"');
 						if (start > 0 && end > start)
@@ -254,6 +35,129 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			catch { }
 
 			return null;
+		}
+
+		/// <summary>
+		/// Reads the mod branch from a zip file by checking version.lua inside it.
+		/// Returns null if the zip doesn't contain a valid version.lua.
+		/// </summary>
+		public (string? version, string? branch) ReadZipInfo(string zipPath)
+		{
+			try
+			{
+				using var archive = ZipFile.OpenRead(zipPath);
+
+				// Find version.lua anywhere in the zip
+				foreach (var entry in archive.Entries)
+				{
+					if (!entry.FullName.EndsWith("version.lua",
+						StringComparison.OrdinalIgnoreCase))
+						continue;
+
+					using var stream = entry.Open();
+					using var reader = new StreamReader(stream);
+					string content = reader.ReadToEnd();
+
+					string? version = null;
+					string? branch = null;
+
+					foreach (var line in content.Split('\n'))
+					{
+						if (line.Contains("NoVR Version:"))
+						{
+							int start = line.IndexOf("NoVR Version:") +
+										"NoVR Version:".Length;
+							int end = line.LastIndexOf('"');
+							if (start > 0 && end > start)
+							{
+								string versionStr = line.Substring(
+									start, end - start).Trim();
+
+								// Branch is the last word e.g. "Jan 04 15:08 mods"
+								var parts = versionStr.Split(' ');
+								version = versionStr;
+								branch = parts.Length > 0
+									? parts[^1].ToLowerInvariant()
+									: "main";
+							}
+						}
+					}
+
+					return (version, branch);
+				}
+			}
+			catch { }
+
+			return (null, null);
+		}
+
+		/// <summary>
+		/// Installs the mod from a local zip file into the game directory.
+		/// </summary>
+		public void InstallFromZip(
+			string zipPath,
+			string gamePath,
+			IProgress<double> onProgress,
+			Action<string> onStatus,
+			Action<string> onError)
+		{
+			try
+			{
+				if (!File.Exists(zipPath))
+				{
+					onError("Zip file not found.");
+					return;
+				}
+
+				if (!Directory.Exists(gamePath))
+				{
+					onError($"Game path not found: {gamePath}");
+					return;
+				}
+
+				onStatus("Reading zip file...");
+				using var archive = ZipFile.OpenRead(zipPath);
+				int total = archive.Entries.Count;
+				int current = 0;
+
+				onStatus("Installing mod files...");
+				foreach (var entry in archive.Entries)
+				{
+					// Skip directory entries
+					if (string.IsNullOrEmpty(entry.Name))
+					{
+						current++;
+						continue;
+					}
+
+					string destPath = Path.Combine(gamePath, entry.FullName
+						.Replace('/', Path.DirectorySeparatorChar));
+
+					Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+					entry.ExtractToFile(destPath, overwrite: true);
+
+					current++;
+					onProgress.Report((double)current / total);
+				}
+
+				onStatus("Mod installed successfully!");
+			}
+			catch (Exception ex)
+			{
+				onError($"Installation failed: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Detects the installed mod branch from the local version.lua.
+		/// </summary>
+		public string? GetInstalledBranch(string gamePath)
+		{
+			string? version = GetInstalledModVersion(gamePath);
+			if (version == null) return null;
+
+			var parts = version.Split(' ');
+			return parts.Length > 0 ? parts[^1].ToLowerInvariant() : "main";
 		}
 	}
 }

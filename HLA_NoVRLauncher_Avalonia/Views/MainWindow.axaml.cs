@@ -12,16 +12,20 @@ namespace HLA_NoVRLauncher_Avalonia.Views
 			DataContextChanged += (_, _) =>
 			{
 				if (DataContext is MainWindowViewModel vm)
+				{
 					vm.PropertyChanged += OnViewModelPropertyChanged;
+					if (vm.CurrentPage is HomeViewModel homeVm)
+						WireHomeViewModel(homeVm);
+				}
 			};
 		}
 
-
-
-		private void OnRequestCloseLauncher()
+		private void WireHomeViewModel(HomeViewModel homeVm)
 		{
-			WindowState = WindowState.Minimized;
+			homeVm.RequestCloseLauncher += OnRequestCloseLauncher;
+			homeVm.RequestSetup += OnRequestSetup;
 		}
+
 		private void OnViewModelPropertyChanged(object? sender,
 			System.ComponentModel.PropertyChangedEventArgs e)
 		{
@@ -30,10 +34,14 @@ namespace HLA_NoVRLauncher_Avalonia.Views
 				if (DataContext is MainWindowViewModel vm &&
 					vm.CurrentPage is HomeViewModel homeVm)
 				{
-					homeVm.RequestCloseLauncher += OnRequestCloseLauncher;
-					homeVm.RequestSetup += OnRequestSetup;
+					WireHomeViewModel(homeVm);
 				}
 			}
+		}
+
+		private void OnRequestCloseLauncher()
+		{
+			WindowState = WindowState.Minimized;
 		}
 
 		private void OnRequestSetup()

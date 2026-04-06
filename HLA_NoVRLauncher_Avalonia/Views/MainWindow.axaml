@@ -19,6 +19,8 @@
                 ClipToBounds="True">
 
             <DockPanel>
+
+                <!-- Top: toggle + title -->
                 <StackPanel DockPanel.Dock="Top" Spacing="0">
                     <Button Command="{Binding ToggleSidebarCommand}"
                             HorizontalAlignment="Stretch"
@@ -41,54 +43,21 @@
                     <Separator/>
                 </StackPanel>
 
+                <!-- Bottom: version only -->
                 <StackPanel DockPanel.Dock="Bottom"
                             Margin="8,0,8,12"
                             Spacing="8"
                             IsVisible="{Binding IsSidebarOpen}">
-
                     <Separator/>
-
-                    <StackPanel Orientation="Horizontal"
-                                Spacing="8"
-                                IsVisible="{Binding IsCheckingForUpdates}"
-                                Margin="8,4,0,0">
-                        <TextBlock Text="⟳"
-                                   FontSize="14"
-                                   Foreground="{StaticResource Brush.TextSecondary}"/>
-                        <TextBlock Text="Checking for updates..."
-                                   FontSize="11"
-                                   Foreground="{StaticResource Brush.TextSecondary}"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <Border IsVisible="{Binding LauncherUpdateAvailable}"
-                            Background="{StaticResource Brush.Accent}"
-                            CornerRadius="6"
-                            Padding="10,8">
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Update Available!"
-                                       FontWeight="Bold"
-                                       FontSize="12"
-                                       Foreground="White"/>
-                            <TextBlock Text="{Binding LatestLauncherVersion}"
-                                       FontSize="11"
-                                       Foreground="White"/>
-                            <Button Content="Download Update"
-                                    Command="{Binding OpenReleasesPageCommand}"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Center"
-                                    FontSize="11"
-                                    Padding="0,4"/>
-                        </StackPanel>
-                    </Border>
-
                     <TextBlock Text="{Binding LauncherVersion}"
                                FontSize="11"
                                Foreground="{StaticResource Brush.TextSecondary}"
                                Margin="8,0,0,0"/>
                 </StackPanel>
 
+                <!-- Nav buttons -->
                 <StackPanel Spacing="4" Margin="8,8,8,0">
+
                     <Button Command="{Binding NavigateMainCommand}"
                             HorizontalAlignment="Stretch"
                             HorizontalContentAlignment="Left"
@@ -127,7 +96,9 @@
                                        VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+
                 </StackPanel>
+
             </DockPanel>
         </Border>
 

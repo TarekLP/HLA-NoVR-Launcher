@@ -131,11 +131,11 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		{
 			var settings = _settingsService.LoadSettings();
 			settings.GamePath = GamePath;
-			settings.ModBranch = SelectedBranch;
 			settings.FirstRun = false;
 			_settingsService.SaveSettings(settings);
 			SetupComplete?.Invoke();
 		}
+
 		partial void OnCurrentStepChanged(int value)
 		{
 			OnPropertyChanged(nameof(IsStep0));

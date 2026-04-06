@@ -21,7 +21,10 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
         [ObservableProperty]
         private string _selectedBranch;
 
-        [ObservableProperty]
+		[ObservableProperty]
+		private string _detectedBranch = "Not detected";
+
+		[ObservableProperty]
         private string _selectedResolution;
 
         [ObservableProperty]
@@ -43,34 +46,43 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
             "Custom"
         };
 
-        public SettingsViewModel(LauncherSettings currentSettings)
-        {
-            _settingsService = new SettingsService();
-            _gameService = new GameService();
-            _settings = currentSettings;
-            _selectedBranch = currentSettings.ModBranch;
+		public SettingsViewModel(LauncherSettings currentSettings)
+		{
+			_settingsService = new SettingsService();
+			_gameService = new GameService();
+			_settings = currentSettings;
 
-            string res = $"{currentSettings.FullscreenWidth}x{currentSettings.FullscreenHeight}";
-            _selectedResolution = CommonResolutions.Contains(res) ? res : "Custom";
+			string res = $"{currentSettings.FullscreenWidth}x{currentSettings.FullscreenHeight}";
+			_selectedResolution = CommonResolutions.Contains(res) ? res : "Custom";
 
-            if (!string.IsNullOrEmpty(currentSettings.GamePath))
-            {
-                _gamePath = currentSettings.GamePath;
-            }
-            else
-            {
-                string steamPath = _gameService.GetSteamInstallPath() ?? "";
-                _gamePath = !string.IsNullOrEmpty(steamPath)
-                    ? _gameService.GetDefaultGamePath(steamPath)
-                    : "";
-            }
+			if (!string.IsNullOrEmpty(currentSettings.GamePath))
+				_gamePath = currentSettings.GamePath;
+			else
+			{
+				string steamPath = _gameService.GetSteamInstallPath() ?? "";
+				_gamePath = !string.IsNullOrEmpty(steamPath)
+					? _gameService.GetDefaultGamePath(steamPath)
+					: "";
+			}
 
-            // Auto-save on any change
-            PropertyChanged += (_, _) => Save();
-            Settings.PropertyChanged += (_, _) => Save();
-        }
+			// Detect installed branch
+			var versioner = new LauncherVersioner();
+			string? branch = versioner.GetInstalledBranch(_gamePath);
+			_detectedBranch = branch switch
+			{
+				"main" => "Stable Branch - No Mods",
+				"mods" => "Stable Branch - Community Mods",
+				"steam_deck" => "Steam Deck Branch - Linux / Steam Deck Users",
+				null => "Not detected",
+				_ => branch
+			};
 
-        private void Save()
+			// Auto-save on any change
+			PropertyChanged += (_, _) => Save();
+			Settings.PropertyChanged += (_, _) => Save();
+		}
+
+		private void Save()
         {
             Settings.ModBranch = SelectedBranch;
             Settings.GamePath = GamePath;

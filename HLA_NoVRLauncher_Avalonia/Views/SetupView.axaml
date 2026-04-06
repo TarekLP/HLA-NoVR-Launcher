@@ -21,124 +21,54 @@
                        FontWeight="Bold"
                        Foreground="{StaticResource Brush.Accent}"
                        HorizontalAlignment="Center"/>
-            <TextBlock Text="Let's get you set up in a few quick steps."
+            <TextBlock Text="Let's get you set up."
                        FontSize="13"
                        Foreground="{StaticResource Brush.TextSecondary}"
                        HorizontalAlignment="Center"/>
         </StackPanel>
 
-        <!-- Step content -->
-        <Panel Grid.Row="1" MinHeight="200">
+        <!-- Game Path -->
+        <StackPanel Grid.Row="1" Spacing="16">
 
-            <!-- Step 0 — Game Path -->
-            <StackPanel Spacing="16" IsVisible="{Binding IsStep0}">
+            <TextBlock Text="Game Location"
+                       FontSize="16"
+                       FontWeight="Bold"/>
 
-                <TextBlock Text="Step 1 — Game Location"
-                           FontSize="16"
-                           FontWeight="Bold"/>
+            <TextBlock Text="Select your Half-Life: Alyx installation folder. This is the folder that contains the 'game' and 'content' subfolders."
+                       Foreground="{StaticResource Brush.TextSecondary}"
+                       TextWrapping="Wrap"/>
 
-                <TextBlock Text="Select your Half-Life: Alyx installation folder. This is the folder that contains the 'game' and 'content' subfolders."
-                           Foreground="{StaticResource Brush.TextSecondary}"
-                           TextWrapping="Wrap"/>
+            <Grid ColumnDefinitions="*, Auto">
+                <TextBox Grid.Column="0"
+                         Text="{Binding GamePath}"
+                         Watermark="Path to Half-Life: Alyx folder..."
+                         Margin="0,0,8,0"/>
+                <Button Grid.Column="1"
+                        Content="Browse"
+                        Command="{Binding BrowseCommand}"/>
+            </Grid>
 
-                <Grid ColumnDefinitions="*, Auto">
-                    <TextBox Grid.Column="0"
-                             Text="{Binding GamePath}"
-                             Watermark="Path to Half-Life: Alyx folder..."
-                             Margin="0,0,8,0"/>
-                    <Button Grid.Column="1"
-                            Content="Browse"
-                            Command="{Binding BrowseCommand}"/>
-                </Grid>
+            <TextBlock Text="{Binding GamePathMessage}"
+                       FontSize="12"
+                       Foreground="{Binding GamePathMessageColor}"
+                       IsVisible="{Binding GamePathMessage,
+                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                <TextBlock Text="{Binding GamePathMessage}"
-                           FontSize="12"
-                           Foreground="{Binding GamePathMessageColor}"
-                           IsVisible="{Binding GamePathMessage,
-                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <TextBlock Text="Once set up, click Install Mod on the home screen and select your downloaded zip file from GitHub."
+                       Foreground="{StaticResource Brush.TextSecondary}"
+                       TextWrapping="Wrap"
+                       FontSize="12"/>
 
-            </StackPanel>
+        </StackPanel>
 
-            <!-- Step 1 — Mod Branch -->
-            <StackPanel Spacing="16" IsVisible="{Binding IsStep1}">
-
-                <TextBlock Text="Step 2 — Mod Branch"
-                           FontSize="16"
-                           FontWeight="Bold"/>
-
-                <TextBlock Text="Choose which branch of the NoVR mod to install. If you're unsure, stick with 'main'."
-                           Foreground="{StaticResource Brush.TextSecondary}"
-                           TextWrapping="Wrap"/>
-
-                <Border Classes="card" Padding="16">
-                    <StackPanel Spacing="12">
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="main" FontWeight="Bold"/>
-                            <TextBlock Text="The stable release branch. Recommended for most users."
-                                       FontSize="12"
-                                       Foreground="{StaticResource Brush.TextSecondary}"/>
-                        </StackPanel>
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="mods" FontWeight="Bold"/>
-                            <TextBlock Text="Includes community mods and extra content on top of the base mod."
-                                       FontSize="12"
-                                       Foreground="{StaticResource Brush.TextSecondary}"/>
-                        </StackPanel>
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="steam_deck" FontWeight="Bold"/>
-                            <TextBlock Text="Optimized for Steam Deck and Linux users."
-                                       FontSize="12"
-                                       Foreground="{StaticResource Brush.TextSecondary}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <ComboBox HorizontalAlignment="Stretch"
-                          ItemsSource="{Binding AvailableBranches}"
-                          SelectedItem="{Binding SelectedBranch}"/>
-
-            </StackPanel>
-
-        </Panel>
-
-        <!-- Navigation buttons -->
-        <Grid Grid.Row="2"
-              ColumnDefinitions="Auto, *, Auto"
-              Margin="0,30,0,0">
-
-            <Button Grid.Column="0"
-                    Content="Back"
-                    Command="{Binding BackCommand}"
-                    IsVisible="{Binding IsStep1}"/>
-
-            <!-- Step indicator dots -->
-            <StackPanel Grid.Column="1"
-                        Orientation="Horizontal"
-                        HorizontalAlignment="Center"
-                        Spacing="8"
-                        VerticalAlignment="Center">
-                <Ellipse Width="8" Height="8"
-                         Fill="{StaticResource Brush.Accent}"
-                         Opacity="1"/>
-                <Ellipse Width="8" Height="8"
-                         Fill="{StaticResource Brush.TextSecondary}"
-                         Opacity="0.4"/>
-            </StackPanel>
-
-            <Button Grid.Column="2"
-                    Classes="accent"
-                    Command="{Binding NextCommand}"
-                    IsVisible="{Binding IsStep0}"
-                    IsEnabled="{Binding GamePathValid}"
-                    Content="Next →"/>
-
-            <Button Grid.Column="2"
-                    Classes="accent"
-                    Command="{Binding FinishCommand}"
-                    IsVisible="{Binding IsStep1}"
-                    Content="Finish →"/>
-
-        </Grid>
+        <!-- Finish button -->
+        <Button Grid.Row="2"
+                Classes="accent"
+                Command="{Binding FinishCommand}"
+                IsEnabled="{Binding GamePathValid}"
+                HorizontalAlignment="Right"
+                Margin="0,30,0,0"
+                Content="Get Started →"/>
 
     </Grid>
 

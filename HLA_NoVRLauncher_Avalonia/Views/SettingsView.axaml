@@ -10,14 +10,18 @@
             <!-- Mod Branch -->
             <Border Classes="card" Padding="20">
                 <StackPanel Spacing="15">
-                    <TextBlock Text="Mod Branch" FontWeight="Bold"/>
-                    <TextBlock Text="Selects which branch of the NoVR mod to install and check updates for."
+                    <TextBlock Text="Installed Mod Branch" FontWeight="Bold"/>
+                    <TextBlock Text="Detected automatically from your installed mod."
                                Foreground="{StaticResource Brush.TextSecondary}"
                                TextWrapping="Wrap"
                                FontSize="12"/>
-                    <ComboBox HorizontalAlignment="Stretch"
-                              ItemsSource="{Binding AvailableBranches}"
-                              SelectedItem="{Binding SelectedBranch}"/>
+                    <Border Background="{StaticResource Brush.SurfaceAlt}"
+                            CornerRadius="4"
+                            Padding="12,8">
+                        <TextBlock Text="{Binding DetectedBranch}"
+                                   FontFamily="Consolas, Monospace"
+                                   FontSize="13"/>
+                    </Border>
                     <Separator/>
                     <CheckBox Content="Force Reinstall"/>
                     <CheckBox Content="Use Legacy Main Menu"/>
