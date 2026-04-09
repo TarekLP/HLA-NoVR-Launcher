@@ -5,13 +5,18 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace HLA_NoVRLauncher_Avalonia.Services
 {
+	/// <summary>
+	/// Handles launcher settings persistence and loading.
+	/// </summary>
 	public class SettingsService
 	{
 		private readonly string _configPath = Path.Combine(
-		AppDomain.CurrentDomain.BaseDirectory, "launcher_settings.json");
+			AppDomain.CurrentDomain.BaseDirectory, "launcher_settings.json");
 
 		public LauncherSettings LoadSettings()
 		{
@@ -45,6 +50,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		}
 	}
 
+	/// <summary>
+	/// Manages game discovery, installation detection, and Steam integration.
+	/// </summary>
 	public class GameService
 	{
 		private const string AppId = "546560";
@@ -53,7 +61,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		public string? GetSteamInstallPath()
 		{
-			// Windows — registry
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 			{
 				using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
@@ -61,7 +68,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 						   ?.Replace('/', Path.DirectorySeparatorChar);
 			}
 
-			// Linux / Steam Deck — standard paths
 			string[] linuxPaths =
 			[
 				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".steam", "steam"),
@@ -79,18 +85,15 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		public string GetDefaultGamePath(string steamPath)
 		{
-			// First check the default Steam library
 			string defaultPath = Path.Combine(steamPath, "steamapps", "common", GameFolderName);
 			if (Directory.Exists(defaultPath))
 				return defaultPath;
 
-			// Check additional Steam library folders from libraryfolders.vdf
 			string vdfPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
 			if (File.Exists(vdfPath))
 			{
 				foreach (var line in File.ReadAllLines(vdfPath))
 				{
-					// VDF lines with library paths look like:  "path"  "D:\\SteamLibrary"
 					if (!line.TrimStart().StartsWith("\"path\""))
 						continue;
 
@@ -106,7 +109,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				}
 			}
 
-			// Fall back to default even if it doesn't exist
 			return defaultPath;
 		}
 
@@ -128,6 +130,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		public string GetVerifyLink() => $"steam://validate/{AppId}";
 	}
 
+	/// <summary>
+	/// Handles game launch with configurable settings and process monitoring.
+	/// </summary>
 	public class LaunchService
 	{
 		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
@@ -138,10 +143,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 #if DEBUG
 			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0 -condebug";
 #else
-				const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
+			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
 #endif
 
-			// Build managed args from settings checkboxes
 			var managedArgs = new System.Text.StringBuilder();
 
 			if (settings.Windowed)
@@ -187,6 +191,400 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 				onExited?.Invoke();
 			});
+		}
+	}
+
+	/// <summary>
+	/// Provides cross-platform window management and helper process execution.
+	/// Merges functionality from the original C++ launcher helper (main.cpp).
+	/// Supports Windows (Win32 API) and Linux (X11).
+	/// </summary>
+	public class LauncherHelperService
+	{
+		private static class WindowHelper
+		{
+			// ============ Windows P/Invoke Imports ============
+
+			[DllImport("user32.dll", SetLastError = true)]
+			public static extern IntPtr FindWindowA(string lpClassName, string lpWindowName);
+
+			[DllImport("user32.dll")]
+			private static extern IntPtr GetTopWindow(IntPtr hWnd);
+
+			[DllImport("user32.dll")]
+			private static extern IntPtr GetNextWindow(IntPtr hWnd, int nCmd);
+
+			private const int GW_HWNDNEXT = 2;
+
+			[DllImport("user32.dll")]
+			private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+			[DllImport("user32.dll")]
+			private static extern bool IsWindowVisible(IntPtr hWnd);
+
+			[DllImport("kernel32.dll")]
+			private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+			private const uint TH32CS_SNAPPROCESS = 2;
+
+			[DllImport("kernel32.dll")]
+			private static extern bool Process32First(IntPtr hSnapshot, ref ProcessEntry32 lppe);
+
+			[DllImport("kernel32.dll")]
+			private static extern bool Process32Next(IntPtr hSnapshot, ref ProcessEntry32 lppe);
+
+			[DllImport("kernel32.dll")]
+			private static extern bool CloseHandle(IntPtr hObject);
+
+			[DllImport("user32.dll")]
+			private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+			[DllImport("user32.dll")]
+			private static extern bool SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+			private const int GWLP_HWNDPARENT = -8;
+
+			[DllImport("user32.dll")]
+			private static extern bool GetClientRect(IntPtr hWnd, out Rect lpRect);
+
+			[DllImport("user32.dll")]
+			private static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
+
+			[DllImport("user32.dll")]
+			private static extern short GetKeyState(int nVirtKey);
+
+			private const int VK_ESCAPE = 0x1B;
+
+			[DllImport("user32.dll")]
+			private static extern bool SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+			private const uint WM_KEYDOWN = 0x0100;
+			private const uint WM_KEYUP = 0x0101;
+			private const int VK_PAUSE = 0x13;
+
+			// ============ Windows Data Structures ============
+
+			[StructLayout(LayoutKind.Sequential)]
+			private struct ProcessEntry32
+			{
+				public uint dwSize;
+				public uint cntUsage;
+				public uint th32ProcessID;
+				public IntPtr th32ParentProcessID;
+				public uint th32ModuleID;
+				public uint cntThreads;
+				public uint th32ParentProcessID_2;
+				public int pcPriority;
+				[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+				public string szExeFile;
+			}
+
+			[StructLayout(LayoutKind.Sequential)]
+			public struct Rect
+			{
+				public int left;
+				public int top;
+				public int right;
+				public int bottom;
+			}
+
+			[StructLayout(LayoutKind.Sequential)]
+			public struct Point
+			{
+				public int x;
+				public int y;
+			}
+
+			// ============ Public Methods ============
+
+			public static IntPtr GetWindowFromProcessID(uint processID)
+			{
+				IntPtr hwnd = GetTopWindow(IntPtr.Zero);
+				while (hwnd != IntPtr.Zero)
+				{
+					GetWindowThreadProcessId(hwnd, out uint wndProcID);
+					if (wndProcID == processID && IsWindowVisible(hwnd))
+					{
+						return hwnd;
+					}
+					hwnd = GetNextWindow(hwnd, GW_HWNDNEXT);
+				}
+				return IntPtr.Zero;
+			}
+
+			public static uint GetProcessIDByExeName(string exeName)
+			{
+				IntPtr snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+				if (snapshot == IntPtr.Zero)
+					return 0;
+
+				try
+				{
+					var pe = new ProcessEntry32 { dwSize = (uint)Marshal.SizeOf(typeof(ProcessEntry32)) };
+					if (Process32First(snapshot, ref pe))
+					{
+						do
+						{
+							if (exeName.Equals(pe.szExeFile, StringComparison.OrdinalIgnoreCase))
+								return pe.th32ProcessID;
+						} while (Process32Next(snapshot, ref pe));
+					}
+				}
+				finally
+				{
+					CloseHandle(snapshot);
+				}
+
+				return 0;
+			}
+
+			public static IntPtr GetWindowByExeName(string exeName)
+			{
+				uint processID = GetProcessIDByExeName(exeName);
+				return processID == 0 ? IntPtr.Zero : GetWindowFromProcessID(processID);
+			}
+
+			public static void FocusWindow(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+					SetForegroundWindow(hwnd);
+			}
+
+			public static void SetParent(IntPtr childWindow, IntPtr parentWindow)
+			{
+				if (childWindow != IntPtr.Zero && parentWindow != IntPtr.Zero)
+					SetWindowLongPtr(childWindow, GWLP_HWNDPARENT, parentWindow);
+			}
+
+			public static void SendPauseKey(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+				{
+					SendMessage(hwnd, WM_KEYDOWN, (IntPtr)VK_PAUSE, IntPtr.Zero);
+					SendMessage(hwnd, WM_KEYUP, (IntPtr)VK_PAUSE, IntPtr.Zero);
+				}
+			}
+
+			public static (int x, int y, int width, int height) GetWindowGeometry(IntPtr hwnd)
+			{
+				if (hwnd == IntPtr.Zero)
+					return (0, 0, 0, 0);
+
+				GetClientRect(hwnd, out Rect rect);
+				var topLeft = new Point { x = rect.left, y = rect.top };
+				var bottomRight = new Point { x = rect.right, y = rect.bottom };
+
+				ClientToScreen(hwnd, ref topLeft);
+				ClientToScreen(hwnd, ref bottomRight);
+
+				int width = bottomRight.x - topLeft.x;
+				int height = bottomRight.y - topLeft.y;
+
+				return (topLeft.x, topLeft.y, width, height);
+			}
+
+			public static bool IsEscapePressed()
+			{
+				return (GetKeyState(VK_ESCAPE) & 0x8000) != 0;
+			}
+		}
+
+		private const int WINDOW_WAIT_TIMEOUT_SECONDS = 120;
+		private const int WINDOW_CHECK_INTERVAL_MS = 10;
+		private const int GEOMETRY_UPDATE_INTERVAL_MS = 10;
+
+		/// <summary>
+		/// Executes launcher helper commands: exec, focusgame, focuslauncher, update.
+		/// </summary>
+		public void ExecuteCommand(string command, string helperExecutableName)
+		{
+			try
+			{
+				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				{
+					ExecuteCommandWindows(command, helperExecutableName);
+				}
+				else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+				{
+					ExecuteCommandLinux(command);
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Error executing command '{command}': {ex.Message}");
+			}
+		}
+
+		private void ExecuteCommandWindows(string command, string helperExecutableName)
+		{
+			switch (command.ToLower())
+			{
+				case "exec":
+					{
+						IntPtr gameWindow = WindowHelper.GetWindowByExeName("hlvr.exe");
+						WindowHelper.SendPauseKey(gameWindow);
+					}
+					break;
+
+				case "focusgame":
+					{
+						IntPtr gameWindow = WindowHelper.GetWindowByExeName("hlvr.exe");
+						WindowHelper.FocusWindow(gameWindow);
+					}
+					break;
+
+				case "focuslauncher":
+					{
+						IntPtr launcherWindow = WindowHelper.FindWindowA("Engine", "Half-Life: Alyx NoVR Launcher");
+						WindowHelper.FocusWindow(launcherWindow);
+					}
+					break;
+
+				case "update":
+					HandleUpdate("HLA-NoVR-Launcher.exe");
+					break;
+			}
+		}
+
+		private void ExecuteCommandLinux(string command)
+		{
+			Console.WriteLine($"Linux command '{command}' - X11 support requires additional implementation");
+		}
+
+		private void HandleUpdate(string launcherExePath)
+		{
+			try
+			{
+				string updatePath = launcherExePath + ".update";
+
+				int maxAttempts = 10;
+				int attempt = 0;
+				while (System.IO.File.Exists(launcherExePath) && attempt < maxAttempts)
+				{
+					try
+					{
+						System.IO.File.Delete(launcherExePath);
+						break;
+					}
+					catch
+					{
+						attempt++;
+						Thread.Sleep(100);
+					}
+				}
+
+				if (System.IO.File.Exists(updatePath))
+				{
+					System.IO.File.Move(updatePath, launcherExePath, true);
+				}
+
+				Process.Start(new ProcessStartInfo
+				{
+					FileName = launcherExePath,
+					UseShellExecute = true
+				});
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Update failed: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Gets the current geometry (position and size) of the game window.
+		/// Returns a tuple of (x, y, width, height).
+		/// </summary>
+		public (int x, int y, int width, int height) GetWindowGeometry(IntPtr gameWindow)
+		{
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				throw new PlatformNotSupportedException("GetWindowGeometry is Windows-only");
+
+			return WindowHelper.GetWindowGeometry(gameWindow);
+		}
+
+		/// <summary>
+		/// Monitors game window geometry periodically. Useful for positioning overlays.
+		/// </summary>
+		public async Task MonitorGameWindowAsync(
+			IntPtr gameWindow,
+			Action<(int x, int y, int width, int height)> onGeometryChanged,
+			CancellationToken cancellationToken = default)
+		{
+			if (gameWindow == IntPtr.Zero)
+				throw new ArgumentException("Invalid game window handle");
+
+			(int lastX, int lastY, int lastW, int lastH) = (0, 0, 0, 0);
+
+			while (!cancellationToken.IsCancellationRequested)
+			{
+				var (x, y, w, h) = GetWindowGeometry(gameWindow);
+
+				if (x != lastX || y != lastY || w != lastW || h != lastH)
+				{
+					onGeometryChanged((x, y, w, h));
+					(lastX, lastY, lastW, lastH) = (x, y, w, h);
+				}
+
+				await Task.Delay(GEOMETRY_UPDATE_INTERVAL_MS, cancellationToken);
+			}
+		}
+
+		/// <summary>
+		/// Waits for the game window to appear, with timeout and parent setup.
+		/// </summary>
+		public async Task<IntPtr> WaitForGameWindowAsync(
+			string gameExecutableName,
+			IntPtr menuWindow = default,
+			bool setupParent = false,
+			CancellationToken cancellationToken = default)
+		{
+			DateTime startTime = DateTime.UtcNow;
+
+			while (!cancellationToken.IsCancellationRequested)
+			{
+				if ((DateTime.UtcNow - startTime).TotalSeconds > WINDOW_WAIT_TIMEOUT_SECONDS)
+				{
+					throw new TimeoutException(
+						$"Game window not found after {WINDOW_WAIT_TIMEOUT_SECONDS} seconds");
+				}
+
+				IntPtr gameWindow = WindowHelper.GetWindowByExeName(gameExecutableName);
+
+				if (gameWindow != IntPtr.Zero)
+				{
+					if (setupParent && menuWindow != IntPtr.Zero)
+					{
+						WindowHelper.SetParent(menuWindow, gameWindow);
+						WindowHelper.FocusWindow(gameWindow);
+					}
+
+					return gameWindow;
+				}
+
+				await Task.Delay(WINDOW_CHECK_INTERVAL_MS, cancellationToken);
+			}
+
+			throw new OperationCanceledException("Waiting for game window was cancelled");
+		}
+
+		/// <summary>
+		/// Finds a window by class name and title (Windows only).
+		/// </summary>
+		public IntPtr FindWindowByName(string className, string windowTitle)
+		{
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				throw new PlatformNotSupportedException("FindWindowByName is Windows-only");
+
+			return WindowHelper.FindWindowA(className, windowTitle);
+		}
+
+		/// <summary>
+		/// Gets the game process by executable name.
+		/// </summary>
+		public Process? GetGameProcess(string gameExecutableName)
+		{
+			var processes = Process.GetProcessesByName(gameExecutableName.Replace(".exe", ""));
+			return processes.Length > 0 ? processes[0] : null;
 		}
 	}
 }
