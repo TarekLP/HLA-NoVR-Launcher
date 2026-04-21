@@ -23,8 +23,6 @@
                                    FontSize="13"/>
                     </Border>
                     <Separator/>
-                    <CheckBox Content="Force Reinstall"/>
-                    <CheckBox Content="Use Legacy Main Menu"/>
                 </StackPanel>
             </Border>
 

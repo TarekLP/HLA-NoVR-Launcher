@@ -196,7 +196,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 	/// <summary>
 	/// Provides cross-platform window management and helper process execution.
-	/// Merges functionality from the original C++ launcher helper (main.cpp).
 	/// Supports Windows (Win32 API) and Linux (X11).
 	/// </summary>
 	public class LauncherHelperService
@@ -294,9 +293,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				public int x;
 				public int y;
 			}
-
-			// ============ Public Methods ============
-
 			public static IntPtr GetWindowFromProcessID(uint processID)
 			{
 				IntPtr hwnd = GetTopWindow(IntPtr.Zero);
@@ -459,11 +455,11 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 				int maxAttempts = 10;
 				int attempt = 0;
-				while (System.IO.File.Exists(launcherExePath) && attempt < maxAttempts)
+				while (File.Exists(launcherExePath) && attempt < maxAttempts)
 				{
 					try
 					{
-						System.IO.File.Delete(launcherExePath);
+						File.Delete(launcherExePath);
 						break;
 					}
 					catch
@@ -473,9 +469,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 					}
 				}
 
-				if (System.IO.File.Exists(updatePath))
+				if (File.Exists(updatePath))
 				{
-					System.IO.File.Move(updatePath, launcherExePath, true);
+					File.Move(updatePath, launcherExePath, true);
 				}
 
 				Process.Start(new ProcessStartInfo
@@ -488,18 +484,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			{
 				Console.WriteLine($"Update failed: {ex.Message}");
 			}
-		}
-
-		/// <summary>
-		/// Gets the current geometry (position and size) of the game window.
-		/// Returns a tuple of (x, y, width, height).
-		/// </summary>
-		public (int x, int y, int width, int height) GetWindowGeometry(IntPtr gameWindow)
-		{
-			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				throw new PlatformNotSupportedException("GetWindowGeometry is Windows-only");
-
-			return WindowHelper.GetWindowGeometry(gameWindow);
 		}
 
 		/// <summary>
@@ -517,7 +501,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 			while (!cancellationToken.IsCancellationRequested)
 			{
-				var (x, y, w, h) = GetWindowGeometry(gameWindow);
+				var (x, y, w, h) = WindowHelper.GetWindowGeometry(gameWindow);
 
 				if (x != lastX || y != lastY || w != lastW || h != lastH)
 				{
@@ -585,6 +569,15 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		{
 			var processes = Process.GetProcessesByName(gameExecutableName.Replace(".exe", ""));
 			return processes.Length > 0 ? processes[0] : null;
+		}
+
+		/// <summary>
+		/// Returns the current position and size of a window in screen pixels.
+		/// Wraps the private WindowHelper method so other services can call it.
+		/// </summary>
+		public (int x, int y, int width, int height) GetWindowGeometry(IntPtr hwnd)
+		{
+			return WindowHelper.GetWindowGeometry(hwnd);
 		}
 	}
 }

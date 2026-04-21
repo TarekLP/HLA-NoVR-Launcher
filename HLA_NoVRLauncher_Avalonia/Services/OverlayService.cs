@@ -1,498 +1,371 @@
-﻿using System;
-using System.Collections.Generic;
+using Avalonia.Controls;
+using Avalonia.Threading;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Media;
-using Avalonia.Threading;
 
 namespace HLA_NoVRLauncher_Avalonia.Services
 {
+	// ---------------------------------------------------------------------------
+	// State machine
+	// ---------------------------------------------------------------------------
+
 	/// <summary>
-	/// Manages the in-game overlay menu window and communication with the HLA game.
-	/// Handles window positioning, input routing, and game command execution.
+	/// Every state the overlay can be in. Transitions are driven purely by
+	/// console.log events and user input — never by timers.
 	/// </summary>
-	public class GameOverlayService : IDisposable
+	public enum OverlayState
 	{
-		private Window? _overlayWindow;
-		private IntPtr _gameWindowHandle;
-		private readonly LauncherHelperService _helperService;
-		private CancellationTokenSource? _geometryMonitoringCts;
-		private Task? _geometryMonitoringTask;
-		private Task? _consoleMonitoringTask;
-		private CancellationTokenSource? _consoleMonitoringCts;
+		/// <summary>Window exists but is invisible. Game is running normally.</summary>
+		Hidden,
 
-		private string? _gamePath;
+		/// <summary>Game just launched and is showing the main menu.</summary>
+		MainMenu,
 
-		// Game communication paths
-		private const string LUA_EXEC_PATH = "game/hlvr/scripts/vscripts/main_menu_exec.lua";
-		private const string CONSOLE_LOG_PATH = "game/hlvr/console.log";
+		/// <summary>A level or save is loading. Overlay stays hidden.</summary>
+		Loading,
 
-		// Event for when game sends menu commands
-		public event Action<string[]>? MenuCommandReceived;
+		/// <summary>Player is in-game. Overlay is hidden.</summary>
+		InGame,
 
-		// Event for geometry changes (useful for debugging)
-		public event Action<(int x, int y, int width, int height)>? GameWindowGeometryChanged;
+		/// <summary>Player pressed ESC. Overlay is visible showing the pause menu.</summary>
+		Paused
+	}
 
-		// Event when game process exits
-		public event Action? GameWindowLost;
+	// ---------------------------------------------------------------------------
+	// Service
+	// ---------------------------------------------------------------------------
 
-		public GameOverlayService(LauncherHelperService helperService)
-		{
-			_helperService = helperService ?? throw new ArgumentNullException(nameof(helperService));
-		}
+	/// <summary>
+	/// Manages the transparent overlay window that sits on top of the HLA game
+	/// window and acts as the in-game menu.
+	///
+	/// Responsibilities:
+	///   - Wait for hlvr.exe to appear, then create and position the overlay
+	///   - Keep overlay geometry in sync with the game window (10 ms loop)
+	///   - Tail console.log and drive the state machine from game events
+	///   - Send commands back to the game via main_menu_exec.lua + PAUSE key
+	/// </summary>
+	public sealed class OverlayService : IDisposable
+	{
+		// -----------------------------------------------------------------------
+		// Constants
+		// -----------------------------------------------------------------------
+
+		private const string LuaExecRelPath   = "game/hlvr/scripts/vscripts/main_menu_exec.lua";
+		private const string ConsoleLogRelPath = "game/hlvr/console.log";
+
+		// Lines the console monitor watches for
+		private const string LineMainMenu    = "[GameMenu] main_menu_mode";
+		private const string LinePause       = "[GameMenu] hide";
+		private const string LineAchievement = "[GameMenu] give_achievement";
+		private const string LineLoading     = "CHostStateMgr::QueueNewRequest( Loading";
+		private const string LineRestoring   = "CHostStateMgr::QueueNewRequest( Restoring Save";
+
+		// -----------------------------------------------------------------------
+		// Private state
+		// -----------------------------------------------------------------------
+
+		private readonly LauncherHelperService _helper;
+
+		private Window?  _window;
+		private IntPtr   _gameHwnd;
+		private string?  _gamePath;
+
+		private OverlayState _state = OverlayState.Hidden;
+
+		private CancellationTokenSource? _cts;
+		private Task? _geometryTask;
+		private Task? _consoleTask;
+
+		// -----------------------------------------------------------------------
+		// Public events
+		// -----------------------------------------------------------------------
+
+		/// <summary>Fired every time the overlay state changes.</summary>
+		public event Action<OverlayState>? StateChanged;
 
 		/// <summary>
-		/// Initializes the overlay and positions it over the game window.
+		/// Fired when the game sends a give_achievement command.
+		/// The string argument is the achievement ID.
+		/// </summary>
+		public event Action<string>? AchievementReceived;
+
+		/// <summary>Fired when the game window disappears (game closed/crashed).</summary>
+		public event Action? GameExited;
+
+		// -----------------------------------------------------------------------
+		// Public properties
+		// -----------------------------------------------------------------------
+
+		public OverlayState State => _state;
+
+		// -----------------------------------------------------------------------
+		// Constructor
+		// -----------------------------------------------------------------------
+
+		public OverlayService(LauncherHelperService helper)
+		{
+			_helper = helper ?? throw new ArgumentNullException(nameof(helper));
+		}
+
+		// -----------------------------------------------------------------------
+		// Initialisation
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Waits for hlvr.exe to appear, then creates and positions the overlay
+		/// window. Also starts the geometry sync loop and the console monitor.
+		///
+		/// The <paramref name="windowFactory"/> delegate is called on the UI thread
+		/// after the game window is found so callers can create their Avalonia
+		/// window normally.
 		/// </summary>
 		public async Task InitializeAsync(
-			string gamePath,
-			Func<Window> overlayWindowFactory,
+			string            gamePath,
+			Func<Window>      windowFactory,
 			CancellationToken cancellationToken = default)
 		{
-			if (string.IsNullOrEmpty(gamePath))
-				throw new ArgumentException("Game path cannot be null or empty", nameof(gamePath));
+			if (string.IsNullOrWhiteSpace(gamePath))
+				throw new ArgumentException("gamePath cannot be empty", nameof(gamePath));
 
 			_gamePath = gamePath;
+			_cts      = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-			// Wait for game window to appear
-			_gameWindowHandle = await _helperService.WaitForGameWindowAsync(
+			// 1. Wait for game window (blocks until hlvr.exe appears or timeout)
+			_gameHwnd = await _helper.WaitForGameWindowAsync(
 				"hlvr.exe",
-				cancellationToken: cancellationToken);
+				cancellationToken: _cts.Token);
 
-			if (_gameWindowHandle == IntPtr.Zero)
-				throw new InvalidOperationException("Failed to find game window");
+			// 2. Create the overlay window on the UI thread, position it immediately
+			await Dispatcher.UIThread.InvokeAsync(() =>
+			{
+				_window = windowFactory();
+				_window.Show();
+				SyncGeometry();
+			});
 
-			// Create overlay window
-			_overlayWindow = overlayWindowFactory();
-			_overlayWindow.Show();
-
-			// Position overlay over game
-			UpdateOverlayPosition();
-
-			// Start monitoring game window geometry
-			await StartGeometryMonitoringAsync(cancellationToken);
-
-			// Start monitoring game console output
-			await StartConsoleMonitoringAsync(cancellationToken);
+			// 3. Start background loops
+			_geometryTask = RunGeometryLoopAsync(_cts.Token);
+			_consoleTask  = RunConsoleMonitorAsync(_cts.Token);
 		}
 
+		// -----------------------------------------------------------------------
+		// Game command sending
+		// -----------------------------------------------------------------------
+
 		/// <summary>
-		/// Sends a game command via Lua execution.
-		/// Example: SendGameCommandAsync("pause") → executes Lua in game
+		/// Sends a console command to the running game.
+		/// Flow: write Lua to main_menu_exec.lua -> send PAUSE key -> game executes.
 		/// </summary>
-		public async Task SendGameCommandAsync(string command)
+		public async Task SendCommandAsync(string consoleCommand)
 		{
 			if (string.IsNullOrEmpty(_gamePath))
-				throw new InvalidOperationException("Overlay not initialized");
+				throw new InvalidOperationException("OverlayService is not initialised.");
 
-			try
-			{
-				// Wrap command in Lua function
-				string luaCommand = $"SendToConsole(\"{EscapeLuaString(command)}\")";
-				string execPath = Path.Combine(_gamePath, LUA_EXEC_PATH);
+			string lua  = $"SendToConsole(\"{EscapeLua(consoleCommand)}\")";
+			string path = Path.Combine(_gamePath, LuaExecRelPath);
 
-				// Write Lua command to file
-				await File.WriteAllTextAsync(execPath, luaCommand);
-
-				// Tell game to execute it via PAUSE key
-				_helperService.ExecuteCommand("exec", "HLA-NoVR-Launcher-Helper.exe");
-
-				await Task.Delay(10); // Small delay for file system sync
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"Error sending game command: {ex.Message}");
-			}
+			await File.WriteAllTextAsync(path, lua);
+			_helper.ExecuteCommand("exec", "HLA-NoVR-Launcher-Helper.exe");
 		}
 
-		/// <summary>
-		/// Reads a setting from the game config files.
-		/// </summary>
-		public object? ReadGameSetting(string key)
-		{
-			if (string.IsNullOrEmpty(_gamePath))
-				throw new InvalidOperationException("Overlay not initialized");
 
-			try
-			{
-				// Try reading from bindings.lua first (for input settings)
-				string bindingsPath = Path.Combine(_gamePath, "game/hlvr/scripts/vscripts/bindings.lua");
-				if (File.Exists(bindingsPath))
-				{
-					string content = File.ReadAllText(bindingsPath);
-					var value = ParseLuaValue(content, key);
-					if (value != null)
-						return value;
-				}
 
-				// Try personal.cfg (for difficulty, commentary, etc)
-				string personalCfgPath = Path.Combine(_gamePath, "game/hlvr/SAVE/personal.cfg");
-				if (File.Exists(personalCfgPath))
-				{
-					string content = File.ReadAllText(personalCfgPath);
-					var value = ParseConfigValue(content, key);
-					if (value != null)
-						return value;
-				}
+		public void Show() => Dispatcher.UIThread.Post(() => _window?.Show());
+		public void Hide() => Dispatcher.UIThread.Post(() => _window?.Hide());
 
-				// Try machine_convars.vcfg (for volume, FOV, etc)
-				string convarPath = Path.Combine(_gamePath, "game/hlvr/cfg/machine_convars.vcfg");
-				if (File.Exists(convarPath))
-				{
-					string content = File.ReadAllText(convarPath);
-					var value = ParseConfigValue(content, key);
-					if (value != null)
-						return value;
-				}
 
-				return null;
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"Error reading game setting {key}: {ex.Message}");
-				return null;
-			}
-		}
 
-		/// <summary>
-		/// Writes a setting to the game config files.
-		/// </summary>
-		public async Task WriteGameSettingAsync(string key, object value)
-		{
-			if (string.IsNullOrEmpty(_gamePath))
-				throw new InvalidOperationException("Overlay not initialized");
-
-			try
-			{
-				// Determine which file to write to based on key
-				string? filePath = DetermineConfigFileForKey(key);
-				if (filePath == null)
-					return;
-
-				filePath = Path.Combine(_gamePath, filePath);
-
-				if (!File.Exists(filePath))
-					return;
-
-				string content = File.ReadAllText(filePath);
-				string newContent = UpdateConfigValue(content, key, value);
-
-				await File.WriteAllTextAsync(filePath, newContent);
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"Error writing game setting {key}: {ex.Message}");
-			}
-		}
-
-		/// <summary>
-		/// Shows the overlay window.
-		/// </summary>
-		public void Show()
-		{
-			if (_overlayWindow != null)
-				_overlayWindow.Show();
-		}
-
-		/// <summary>
-		/// Hides the overlay window.
-		/// </summary>
-		public void Hide()
-		{
-			if (_overlayWindow != null)
-				_overlayWindow.Hide();
-		}
-
-		/// <summary>
-		/// Toggles overlay visibility.
-		/// </summary>
-		public void Toggle()
-		{
-			if (_overlayWindow != null)
-			{
-				if (_overlayWindow.IsVisible)
-					Hide();
-				else
-					Show();
-			}
-		}
-
-		/// <summary>
-		/// Checks if game window still exists.
-		/// </summary>
-		public bool IsGameWindowValid()
-		{
-			var process = _helperService.GetGameProcess("hlvr");
-			return process != null && !process.HasExited;
-		}
-
-		/// <summary>
-		/// Cleans up resources.
-		/// </summary>
 		public void Dispose()
 		{
-			_geometryMonitoringCts?.Cancel();
-			_consoleMonitoringCts?.Cancel();
+			_cts?.Cancel();
 
-			try
-			{
-				_geometryMonitoringTask?.Wait(TimeSpan.FromSeconds(1));
-				_consoleMonitoringTask?.Wait(TimeSpan.FromSeconds(1));
-			}
-			catch { }
+			try { _geometryTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
+			try { _consoleTask?.Wait(TimeSpan.FromSeconds(2));  } catch { }
 
-			_geometryMonitoringCts?.Dispose();
-			_consoleMonitoringCts?.Dispose();
-			_overlayWindow?.Close();
+			_cts?.Dispose();
+
+			Dispatcher.UIThread.Post(() => _window?.Close());
 		}
 
-		// ==================== Private Methods ====================
 
-		private void UpdateOverlayPosition()
+		/// <summary>
+		/// Transitions to a new state and shows/hides the window accordingly.
+		/// All callers are on the console-monitor background thread; Show/Hide
+		/// dispatch to the UI thread internally so this is safe to call from anywhere.
+		/// </summary>
+		private void TransitionTo(OverlayState next)
 		{
-			if (_overlayWindow == null)
-				return;
+			if (_state == next) return;
 
+			_state = next;
+			StateChanged?.Invoke(next);
+
+			switch (next)
+			{
+				case OverlayState.MainMenu:
+				case OverlayState.Paused:
+					Show();
+					break;
+
+				case OverlayState.Hidden:
+				case OverlayState.Loading:
+				case OverlayState.InGame:
+					Hide();
+					break;
+			}
+		}
+
+		/// <summary>
+		/// Interprets one new line from console.log and drives the state machine.
+		/// </summary>
+		private void HandleConsoleLine(string line)
+		{
+			if (line.Contains(LineMainMenu))
+			{
+				TransitionTo(OverlayState.MainMenu);
+			}
+			else if (line.Contains(LinePause))
+			{
+				// "[GameMenu] hide" means the game wants us to show the pause menu
+				TransitionTo(OverlayState.Paused);
+			}
+			else if (line.Contains(LineLoading) || line.Contains(LineRestoring))
+			{
+				TransitionTo(OverlayState.Loading);
+			}
+			else if (line.Contains(LineAchievement))
+			{
+				// "[GameMenu] give_achievement <id>"
+				string[] parts = line.Split(
+					new[] { "[GameMenu] give_achievement " },
+					StringSplitOptions.None);
+
+				if (parts.Length > 1)
+					AchievementReceived?.Invoke(parts[1].Trim());
+			}
+		}
+
+		// -----------------------------------------------------------------------
+		// Geometry sync loop
+		// -----------------------------------------------------------------------
+
+		private async Task RunGeometryLoopAsync(CancellationToken ct)
+		{
 			try
 			{
-				(int x, int y, int width, int height) = _helperService.GetWindowGeometry(_gameWindowHandle);
-
-				Dispatcher.UIThread.Post(() =>
-				{
-					if (_overlayWindow != null)
+				await _helper.MonitorGameWindowAsync(
+					_gameHwnd,
+					geometry =>
 					{
-						_overlayWindow.Position = new PixelPoint(x, y);
-						_overlayWindow.Width = width;
-						_overlayWindow.Height = height;
-					}
-				});
+						// MonitorGameWindowAsync only fires when geometry actually changes,
+						// so every invocation here is a real resize or move — apply it.
+						var (x, y, w, h) = geometry;
+						Dispatcher.UIThread.Post(() =>
+						{
+							if (_window == null) return;
+							_window.Position = new Avalonia.PixelPoint(x, y);
+							_window.Width    = w;
+							_window.Height   = h;
+						});
+					},
+					ct);
 			}
+			catch (OperationCanceledException) { }
 			catch (Exception ex)
 			{
-				Console.WriteLine($"Error updating overlay position: {ex.Message}");
+				Console.WriteLine($"[OverlayService] Geometry loop error: {ex.Message}");
+				// Geometry loop dying almost always means the game window is gone
+				GameExited?.Invoke();
 			}
 		}
 
-		private async Task StartGeometryMonitoringAsync(CancellationToken cancellationToken)
+		// -----------------------------------------------------------------------
+		// Console monitor (positional tail)
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Tails console.log from the last-read byte position, so each poll only
+		/// processes lines the game wrote since the previous poll. This avoids
+		/// re-scanning the entire file (which grows continuously) every 100 ms.
+		/// </summary>
+		private async Task RunConsoleMonitorAsync(CancellationToken ct)
 		{
-			_geometryMonitoringCts = new CancellationTokenSource();
-			using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _geometryMonitoringCts.Token);
+			string consolePath = Path.Combine(_gamePath!, ConsoleLogRelPath);
+			long   filePos     = 0;
 
-			_geometryMonitoringTask = Task.Run(async () =>
+			try
 			{
-				try
+				while (!ct.IsCancellationRequested)
 				{
-					await _helperService.MonitorGameWindowAsync(
-						_gameWindowHandle,
-						(int x, int y, int w, int h) =>
-						{
-							UpdateOverlayPosition();
-							GameWindowGeometryChanged?.Invoke((x, y, w, h));
-						},
-						linkedCts.Token);
-				}
-				catch (OperationCanceledException)
-				{
-					// Expected when cancelling
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine($"Geometry monitoring error: {ex.Message}");
-					GameWindowLost?.Invoke();
-				}
-			}, linkedCts.Token);
-		}
-
-		private async Task StartConsoleMonitoringAsync(CancellationToken cancellationToken)
-		{
-			_consoleMonitoringCts = new CancellationTokenSource();
-			using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _consoleMonitoringCts.Token);
-
-			_consoleMonitoringTask = Task.Run(async () =>
-			{
-				try
-				{
-					while (!linkedCts.Token.IsCancellationRequested)
+					// The log file doesn't exist until the game has started up far enough
+					if (!File.Exists(consolePath))
 					{
-						if (string.IsNullOrEmpty(_gamePath))
-							break;
+						await Task.Delay(500, ct);
+						continue;
+					}
 
-						string consolePath = Path.Combine(_gamePath, CONSOLE_LOG_PATH);
+					try
+					{
+						using var fs = new FileStream(
+							consolePath,
+							FileMode.Open,
+							FileAccess.Read,
+							// Must share with hlvr.exe which keeps the file open for writing
+							FileShare.ReadWrite);
 
-						if (!File.Exists(consolePath))
+						// Seek to where we left off; reset if the file was rotated/truncated
+						fs.Seek(filePos <= fs.Length ? filePos : 0, SeekOrigin.Begin);
+
+						using var reader = new StreamReader(fs);
+						string? line;
+						while ((line = reader.ReadLine()) != null)
 						{
-							await Task.Delay(500, linkedCts.Token);
-							continue;
+							if (!string.IsNullOrWhiteSpace(line))
+								HandleConsoleLine(line);
 						}
 
-						try
-						{
-							// Read console.log and look for menu commands
-							string content = File.ReadAllText(consolePath);
-							var lines = content.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
-
-							foreach (var line in lines)
-							{
-								if (line.Contains("[GameMenu] "))
-								{
-									string[] parts = line.Split(new[] { "[GameMenu] " }, StringSplitOptions.None);
-									if (parts.Length > 1)
-									{
-										string commandLine = parts[1].Trim();
-										string[] command = commandLine.Split(' ');
-
-										if (command.Length > 0)
-										{
-											MenuCommandReceived?.Invoke(command);
-										}
-									}
-								}
-							}
-						}
-						catch (IOException)
-						{
-							// File locked, try again
-						}
-
-						await Task.Delay(100, linkedCts.Token);
+						// Remember position so next poll starts from here
+						filePos = fs.Position;
 					}
-				}
-				catch (OperationCanceledException)
-				{
-					// Expected when cancelling
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine($"Console monitoring error: {ex.Message}");
-				}
-			}, linkedCts.Token);
-		}
+					catch (IOException)
+					{
+						// File briefly locked by the game — skip this poll
+					}
 
-		private string EscapeLuaString(string input)
-		{
-			// Escape special characters for Lua strings
-			return input
-				.Replace("\\", "\\\\")
-				.Replace("\"", "\\\"")
-				.Replace("\n", "\\n")
-				.Replace("\r", "\\r");
-		}
-
-		private object? ParseLuaValue(string content, string key)
-		{
-			// Simple Lua parsing for: KEY = "value" or KEY = true/false
-			foreach (var line in content.Split(Environment.NewLine))
-			{
-				string trimmed = line.Replace(" ", "").Replace("\t", "");
-
-				if (trimmed.StartsWith(key + "="))
-				{
-					string value = trimmed.Substring((key + "=").Length).TrimEnd(';');
-					value = value.Trim('"');
-
-					if (bool.TryParse(value, out bool boolVal))
-						return boolVal;
-
-					if (float.TryParse(value, out float floatVal))
-						return floatVal;
-
-					if (int.TryParse(value, out int intVal))
-						return intVal;
-
-					return value;
+					await Task.Delay(100, ct);
 				}
 			}
-
-			return null;
-		}
-
-		private object? ParseConfigValue(string content, string key)
-		{
-			// Parse config files: "key" "value"
-			foreach (var line in content.Split(Environment.NewLine))
+			catch (OperationCanceledException) { }
+			catch (Exception ex)
 			{
-				if (line.TrimStart().StartsWith("\"" + key + "\""))
-				{
-					var parts = line.Split('"');
-					if (parts.Length >= 4)
-					{
-						string value = parts[3];
-
-						if (bool.TryParse(value, out bool boolVal))
-							return boolVal;
-
-						if (float.TryParse(value, out float floatVal))
-							return floatVal;
-
-						if (int.TryParse(value, out int intVal))
-							return intVal;
-
-						return value;
-					}
-				}
+				Console.WriteLine($"[OverlayService] Console monitor error: {ex.Message}");
 			}
-
-			return null;
 		}
 
-		private string UpdateConfigValue(string content, string key, object value)
+		// -----------------------------------------------------------------------
+		// Helpers
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Reads the current game window geometry and applies it to the overlay
+		/// immediately. Call once on startup before the geometry loop begins.
+		/// Must be called on the UI thread.
+		/// </summary>
+		private void SyncGeometry()
 		{
-			// Rebuild config file with updated value
-			var lines = new List<string>();
+			if (_window == null || _gameHwnd == IntPtr.Zero) return;
 
-			foreach (var line in content.Split(Environment.NewLine))
-			{
-				// Check if this line contains our key
-				if (line.Contains($"\"{key}\""))
-				{
-					// Find the opening quote of the value
-					int firstQuote = line.IndexOf("\"");
-					int secondQuote = line.IndexOf("\"", firstQuote + 1);
-					int thirdQuote = line.IndexOf("\"", secondQuote + 1);
-					int fourthQuote = line.IndexOf("\"", thirdQuote + 1);
-
-					if (thirdQuote != -1 && fourthQuote != -1)
-					{
-						// Reconstruct line with new value
-						string prefix = line.Substring(0, thirdQuote + 1);
-						string suffix = line.Substring(fourthQuote);
-						lines.Add($"{prefix}{value}{suffix}");
-					}
-					else
-					{
-						lines.Add(line);
-					}
-				}
-				else
-				{
-					lines.Add(line);
-				}
-			}
-
-			return string.Join(Environment.NewLine, lines);
+			var (x, y, w, h) = _helper.GetWindowGeometry(_gameHwnd);
+			_window.Position = new Avalonia.PixelPoint(x, y);
+			_window.Width    = w;
+			_window.Height   = h;
 		}
 
-		private string? DetermineConfigFileForKey(string key)
-		{
-			// Determine which config file a key belongs to
-			var bindingsKeys = new[] { "MOUSE_SENSITIVITY", "INVERT_MOUSE_X", "INVERT_MOUSE_Y", "FOV" };
-			var personalCfgKeys = new[] { "setting.skill", "setting.commentary" };
-			var convarKeys = new[] { "snd_gain", "snd_gamevolume", "snd_musicvolume", "snd_gamevoicevolume", "fov_desired", "r_light_sensitivity_mode", "hlvr_closed_caption_type" };
-
-			if (Array.Exists(bindingsKeys, element => element == key))
-				return "game/hlvr/scripts/vscripts/bindings.lua";
-
-			if (Array.Exists(personalCfgKeys, element => element == key))
-				return "game/hlvr/SAVE/personal.cfg";
-
-			if (Array.Exists(convarKeys, element => element == key))
-				return "game/hlvr/cfg/machine_convars.vcfg";
-
-			return null;
-		}
+		/// <summary>Escapes a string for safe embedding inside a Lua string literal.</summary>
+		private static string EscapeLua(string s) =>
+			s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
 	}
 }
