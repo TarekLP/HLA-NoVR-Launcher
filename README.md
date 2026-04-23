@@ -9,27 +9,34 @@
 </p>
 
 ---
-## Features
+# Features
 
 ### A modernised UI - Including a First Time Setup
 ### Settings saving inside a .json file for easy editing
 ### Crash Log Viewer for easy Error Finding and reporting of Bugs
 
+---
 
-## Installation
+# Installation
 
 ### Windows
 1. Download the [latest release](https://github.com/HLANoVR/HLA-NoVR-Launcher/releases).
 2. Download your desired Build from the [HLA-NoVR Repo](https://github.com/HLANoVR/HLA-NoVR), keep it in a zip file (make sure the game folder is in it but DO NOT EXTRACT)
-3. Drop the exe into a folder and run it.
+3. Drop the program files into a folder and run the exe.
 4. Go through the Firs time setup to adjust everything, when it asks you to select a .zip file, select the one you downloaded earlier.
 5. Click "Play" and profit.
 
-### Steam Deck / Linux
-If you are using a Steam Deck or Linux, please refer to the **FAQ** for specific installation instructions.
+### Linux
+1. Download the [latest release](https://github.com/HLANoVR/HLA-NoVR-Launcher/releases).
+2. Download your desired Build from the [HLA-NoVR Repo](https://github.com/HLANoVR/HLA-NoVR), keep it in a zip file (make sure the game folder is in it but DO NOT EXTRACT)
+3. Drop the program files into a folder and run the script.
+4. Go through the Firs time setup to adjust everything, when it asks you to select a .zip file, select the one you downloaded earlier.
+5. Click "Play" and profit.
 
+### Steam Deck
+If the launcher is supported on Steam Deck is currently unknown, will be updated ASAP.
 ---
-## Information
+# Information
 
 
 ### Mod Branch Naming
@@ -42,7 +49,7 @@ The launcher currently recognises these three values:
 | `steam_deck` | Steam Deck and Linux users |
 
 
-### Disclaimer
+# Disclaimer
 * **Compatibility:** Only official copies of the game purchased on Steam are supported.
 ###  Credits
 * The background video was created by [Half Peeps](https://www.youtube.com/@HALFPEEPS).
