@@ -1,0 +1,3747 @@
+﻿PROJECT OVERVIEW - 04/22/2026 16:41:57
+
+========================================
+FOLDER: Models
+========================================
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Models\LauncherEnums.cs ---
+----------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace HLA_NoVRLauncher_Avalonia.Models
+{
+	public enum LauncherStatus
+	{
+		Ready,
+		GameRunning,
+		MissingFiles,
+		SteamNotFound,
+		CheckingStatus,
+		ModNotInstalled
+	}
+}
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Models\LauncherSettings.cs ---
+----------------------------------------
+using CommunityToolkit.Mvvm.ComponentModel;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace HLA_NoVRLauncher_Avalonia.Models
+{
+	public partial class LauncherSettings : ObservableObject
+	{
+		[ObservableProperty] private string _gamePath = string.Empty;
+		[ObservableProperty] private string _customLaunchArgs = string.Empty;
+		[ObservableProperty] private bool _autoLaunch = false;
+		[ObservableProperty] private bool _closeLauncherOnStart = true;
+		[ObservableProperty] private bool _isMuted = true;
+		[ObservableProperty] private string _modBranch = "main";
+		// HLVR Launch Options
+		[ObservableProperty] private bool _windowed = false;
+		[ObservableProperty] private bool _fullscreen = false;
+		[ObservableProperty] private int _fullscreenWidth = 1920;
+		[ObservableProperty] private int _fullscreenHeight = 1080;
+		[ObservableProperty] private bool _defaultMenu = false;
+		[ObservableProperty] private bool _vSync = false;
+		[ObservableProperty] private bool _enableConsole = true;
+
+		// Launcher Options
+		[ObservableProperty] private bool _firstRun = true;
+		[ObservableProperty] private string _backupLocation = "Launcher";
+	}
+}
+
+
+
+
+========================================
+FOLDER: Services
+========================================
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Services\LauncherService.cs ---
+----------------------------------------
+using HLA_NoVRLauncher_Avalonia.Models;
+using Microsoft.Win32;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace HLA_NoVRLauncher_Avalonia.Services
+{
+	/// <summary>
+	/// Handles launcher settings persistence and loading.
+	/// </summary>
+	public class SettingsService
+	{
+		private readonly string _configPath = Path.Combine(
+			AppDomain.CurrentDomain.BaseDirectory, "launcher_settings.json");
+
+		public LauncherSettings LoadSettings()
+		{
+			try
+			{
+				if (!File.Exists(_configPath))
+					return new LauncherSettings();
+
+				string json = File.ReadAllText(_configPath);
+				return JsonSerializer.Deserialize<LauncherSettings>(json)
+					   ?? new LauncherSettings();
+			}
+			catch
+			{
+				return new LauncherSettings();
+			}
+		}
+
+		public void SaveSettings(LauncherSettings settings)
+		{
+			try
+			{
+				var options = new JsonSerializerOptions { WriteIndented = true };
+				string json = JsonSerializer.Serialize(settings, options);
+				File.WriteAllText(_configPath, json);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Failed to save settings: {ex.Message}");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Manages game discovery, installation detection, and Steam integration.
+	/// </summary>
+	public class GameService
+	{
+		private const string AppId = "546560";
+		private const string GameFolderName = "Half-Life Alyx";
+		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
+
+		public string? GetSteamInstallPath()
+		{
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+			{
+				using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
+				return key?.GetValue("SteamPath")?.ToString()
+						   ?.Replace('/', Path.DirectorySeparatorChar);
+			}
+
+			string[] linuxPaths =
+			[
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".steam", "steam"),
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "Steam"),
+			];
+
+			foreach (var path in linuxPaths)
+			{
+				if (Directory.Exists(path))
+					return path;
+			}
+
+			return null;
+		}
+
+		public string GetDefaultGamePath(string steamPath)
+		{
+			string defaultPath = Path.Combine(steamPath, "steamapps", "common", GameFolderName);
+			if (Directory.Exists(defaultPath))
+				return defaultPath;
+
+			string vdfPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+			if (File.Exists(vdfPath))
+			{
+				foreach (var line in File.ReadAllLines(vdfPath))
+				{
+					if (!line.TrimStart().StartsWith("\"path\""))
+						continue;
+
+					var parts = line.Split('"');
+					if (parts.Length < 4) continue;
+
+					string libraryPath = parts[3].Replace("\\\\", "\\");
+					string gamePath = Path.Combine(
+						libraryPath, "steamapps", "common", GameFolderName);
+
+					if (Directory.Exists(gamePath))
+						return gamePath;
+				}
+			}
+
+			return defaultPath;
+		}
+
+		public bool IsGameInstalled(string gamePath)
+		{
+			if (string.IsNullOrWhiteSpace(gamePath)) return false;
+			return File.Exists(Path.Combine(gamePath, ExecutableSubPath));
+		}
+
+		public bool IsNoVrModInstalled(string gamePath, string[] requiredFiles)
+		{
+			foreach (var file in requiredFiles)
+			{
+				if (!File.Exists(Path.Combine(gamePath, file))) return false;
+			}
+			return true;
+		}
+
+		public string GetVerifyLink() => $"steam://validate/{AppId}";
+	}
+
+	/// <summary>
+	/// Handles game launch with configurable settings and process monitoring.
+	/// </summary>
+	public class LaunchService
+	{
+		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
+		private const string AppId = "546560";
+
+		public void LaunchGame(string extraArgs, Action onExited, LauncherSettings settings)
+		{
+#if DEBUG
+			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0 -condebug";
+#else
+			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
+#endif
+
+			var managedArgs = new System.Text.StringBuilder();
+
+			if (settings.Windowed)
+				managedArgs.Append(" -window");
+
+			if (settings.Fullscreen)
+				managedArgs.Append($" -w {settings.FullscreenWidth} -h {settings.FullscreenHeight}");
+
+			if (settings.DefaultMenu)
+				managedArgs.Append(" -defaultmenu");
+
+			if (settings.VSync)
+				managedArgs.Append(" -vsync");
+
+			if (settings.EnableConsole)
+				managedArgs.Append(" -console -vconsole");
+
+			string allArgs = $"{baseArgs}{managedArgs}" +
+							 (string.IsNullOrWhiteSpace(extraArgs) ? "" : $" {extraArgs.Trim()}");
+
+			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(allArgs)}";
+
+			Process.Start(new ProcessStartInfo
+			{
+				FileName = uri,
+				UseShellExecute = true
+			});
+
+			System.Threading.Tasks.Task.Run(async () =>
+			{
+				await System.Threading.Tasks.Task.Delay(5000);
+
+				while (true)
+				{
+					var procs = Process.GetProcessesByName("hlvr");
+					if (procs.Length > 0)
+					{
+						await procs[0].WaitForExitAsync();
+						break;
+					}
+					await System.Threading.Tasks.Task.Delay(2000);
+				}
+
+				onExited?.Invoke();
+			});
+		}
+	}
+
+	/// <summary>
+	/// Provides cross-platform window management and helper process execution.
+	/// Supports Windows (Win32 API) and Linux (X11).
+	/// </summary>
+	public class LauncherHelperService
+	{
+		private static class WindowHelper
+		{
+			// ============ Windows P/Invoke Imports ============
+
+			[DllImport("user32.dll", SetLastError = true)]
+			public static extern IntPtr FindWindowA(string lpClassName, string lpWindowName);
+
+			[DllImport("user32.dll")]
+			private static extern IntPtr GetTopWindow(IntPtr hWnd);
+
+			[DllImport("user32.dll")]
+			private static extern IntPtr GetNextWindow(IntPtr hWnd, int nCmd);
+
+			private const int GW_HWNDNEXT = 2;
+
+			[DllImport("user32.dll")]
+			private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+			[DllImport("user32.dll")]
+			private static extern bool IsWindowVisible(IntPtr hWnd);
+
+			[DllImport("kernel32.dll")]
+			private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+			private const uint TH32CS_SNAPPROCESS = 2;
+
+			[DllImport("kernel32.dll")]
+			private static extern bool Process32First(IntPtr hSnapshot, ref ProcessEntry32 lppe);
+
+			[DllImport("kernel32.dll")]
+			private static extern bool Process32Next(IntPtr hSnapshot, ref ProcessEntry32 lppe);
+
+			[DllImport("kernel32.dll")]
+			private static extern bool CloseHandle(IntPtr hObject);
+
+			[DllImport("user32.dll")]
+			private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+			[DllImport("user32.dll")]
+			private static extern bool SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+			private const int GWLP_HWNDPARENT = -8;
+
+			[DllImport("user32.dll")]
+			private static extern bool GetClientRect(IntPtr hWnd, out Rect lpRect);
+
+			[DllImport("user32.dll")]
+			private static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
+
+			[DllImport("user32.dll")]
+			private static extern short GetKeyState(int nVirtKey);
+
+			private const int VK_ESCAPE = 0x1B;
+
+			[DllImport("user32.dll")]
+			private static extern bool SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+			private const uint WM_KEYDOWN = 0x0100;
+			private const uint WM_KEYUP = 0x0101;
+			private const int VK_PAUSE = 0x13;
+
+			// ============ Windows Data Structures ============
+
+			[StructLayout(LayoutKind.Sequential)]
+			private struct ProcessEntry32
+			{
+				public uint dwSize;
+				public uint cntUsage;
+				public uint th32ProcessID;
+				public IntPtr th32ParentProcessID;
+				public uint th32ModuleID;
+				public uint cntThreads;
+				public uint th32ParentProcessID_2;
+				public int pcPriority;
+				[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+				public string szExeFile;
+			}
+
+			[StructLayout(LayoutKind.Sequential)]
+			public struct Rect
+			{
+				public int left;
+				public int top;
+				public int right;
+				public int bottom;
+			}
+
+			[StructLayout(LayoutKind.Sequential)]
+			public struct Point
+			{
+				public int x;
+				public int y;
+			}
+			public static IntPtr GetWindowFromProcessID(uint processID)
+			{
+				IntPtr hwnd = GetTopWindow(IntPtr.Zero);
+				while (hwnd != IntPtr.Zero)
+				{
+					GetWindowThreadProcessId(hwnd, out uint wndProcID);
+					if (wndProcID == processID && IsWindowVisible(hwnd))
+					{
+						return hwnd;
+					}
+					hwnd = GetNextWindow(hwnd, GW_HWNDNEXT);
+				}
+				return IntPtr.Zero;
+			}
+
+			public static uint GetProcessIDByExeName(string exeName)
+			{
+				IntPtr snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+				if (snapshot == IntPtr.Zero)
+					return 0;
+
+				try
+				{
+					var pe = new ProcessEntry32 { dwSize = (uint)Marshal.SizeOf(typeof(ProcessEntry32)) };
+					if (Process32First(snapshot, ref pe))
+					{
+						do
+						{
+							if (exeName.Equals(pe.szExeFile, StringComparison.OrdinalIgnoreCase))
+								return pe.th32ProcessID;
+						} while (Process32Next(snapshot, ref pe));
+					}
+				}
+				finally
+				{
+					CloseHandle(snapshot);
+				}
+
+				return 0;
+			}
+
+			public static IntPtr GetWindowByExeName(string exeName)
+			{
+				uint processID = GetProcessIDByExeName(exeName);
+				return processID == 0 ? IntPtr.Zero : GetWindowFromProcessID(processID);
+			}
+
+			public static void FocusWindow(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+					SetForegroundWindow(hwnd);
+			}
+
+			public static void SetParent(IntPtr childWindow, IntPtr parentWindow)
+			{
+				if (childWindow != IntPtr.Zero && parentWindow != IntPtr.Zero)
+					SetWindowLongPtr(childWindow, GWLP_HWNDPARENT, parentWindow);
+			}
+
+			public static void SendPauseKey(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+				{
+					SendMessage(hwnd, WM_KEYDOWN, (IntPtr)VK_PAUSE, IntPtr.Zero);
+					SendMessage(hwnd, WM_KEYUP, (IntPtr)VK_PAUSE, IntPtr.Zero);
+				}
+			}
+
+			public static (int x, int y, int width, int height) GetWindowGeometry(IntPtr hwnd)
+			{
+				if (hwnd == IntPtr.Zero)
+					return (0, 0, 0, 0);
+
+				GetClientRect(hwnd, out Rect rect);
+				var topLeft = new Point { x = rect.left, y = rect.top };
+				var bottomRight = new Point { x = rect.right, y = rect.bottom };
+
+				ClientToScreen(hwnd, ref topLeft);
+				ClientToScreen(hwnd, ref bottomRight);
+
+				int width = bottomRight.x - topLeft.x;
+				int height = bottomRight.y - topLeft.y;
+
+				return (topLeft.x, topLeft.y, width, height);
+			}
+
+			public static bool IsEscapePressed()
+			{
+				return (GetKeyState(VK_ESCAPE) & 0x8000) != 0;
+			}
+
+			// SetWindowPos — used to force the overlay on top of the game window
+			[DllImport("user32.dll", SetLastError = true)]
+			private static extern bool SetWindowPos(
+				IntPtr hWnd, IntPtr hWndInsertAfter,
+				int x, int y, int cx, int cy,
+				uint uFlags);
+
+			private static readonly IntPtr HWND_TOPMOST   = new IntPtr(-1);
+			private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+
+			private const uint SWP_NOMOVE    = 0x0002;
+			private const uint SWP_NOSIZE    = 0x0001;
+			private const uint SWP_SHOWWINDOW = 0x0040;
+
+			public static void ForceTopmost(IntPtr hwnd)
+			{
+				if (hwnd == IntPtr.Zero) return;
+				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+			}
+		}
+
+		private const int WINDOW_WAIT_TIMEOUT_SECONDS = 120;
+		private const int WINDOW_CHECK_INTERVAL_MS = 10;
+		private const int GEOMETRY_UPDATE_INTERVAL_MS = 10;
+
+		/// <summary>
+		/// Executes launcher helper commands: exec, focusgame, focuslauncher, update.
+		/// </summary>
+		public void ExecuteCommand(string command, string helperExecutableName)
+		{
+			try
+			{
+				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				{
+					ExecuteCommandWindows(command, helperExecutableName);
+				}
+				else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+				{
+					ExecuteCommandLinux(command);
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Error executing command '{command}': {ex.Message}");
+			}
+		}
+
+		private void ExecuteCommandWindows(string command, string helperExecutableName)
+		{
+			switch (command.ToLower())
+			{
+				case "exec":
+					{
+						IntPtr gameWindow = WindowHelper.GetWindowByExeName("hlvr.exe");
+						WindowHelper.SendPauseKey(gameWindow);
+					}
+					break;
+
+				case "focusgame":
+					{
+						IntPtr gameWindow = WindowHelper.GetWindowByExeName("hlvr.exe");
+						WindowHelper.FocusWindow(gameWindow);
+					}
+					break;
+
+				case "focuslauncher":
+					{
+						IntPtr launcherWindow = WindowHelper.FindWindowA("Engine", "Half-Life: Alyx NoVR Launcher");
+						WindowHelper.FocusWindow(launcherWindow);
+					}
+					break;
+
+				case "update":
+					HandleUpdate("HLA-NoVR-Launcher.exe");
+					break;
+			}
+		}
+
+		private void ExecuteCommandLinux(string command)
+		{
+			Console.WriteLine($"Linux command '{command}' - X11 support requires additional implementation");
+		}
+
+		private void HandleUpdate(string launcherExePath)
+		{
+			try
+			{
+				string updatePath = launcherExePath + ".update";
+
+				int maxAttempts = 10;
+				int attempt = 0;
+				while (File.Exists(launcherExePath) && attempt < maxAttempts)
+				{
+					try
+					{
+						File.Delete(launcherExePath);
+						break;
+					}
+					catch
+					{
+						attempt++;
+						Thread.Sleep(100);
+					}
+				}
+
+				if (File.Exists(updatePath))
+				{
+					File.Move(updatePath, launcherExePath, true);
+				}
+
+				Process.Start(new ProcessStartInfo
+				{
+					FileName = launcherExePath,
+					UseShellExecute = true
+				});
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Update failed: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Monitors game window geometry periodically. Useful for positioning overlays.
+		/// </summary>
+		public async Task MonitorGameWindowAsync(
+			IntPtr gameWindow,
+			Action<(int x, int y, int width, int height)> onGeometryChanged,
+			CancellationToken cancellationToken = default)
+		{
+			if (gameWindow == IntPtr.Zero)
+				throw new ArgumentException("Invalid game window handle");
+
+			(int lastX, int lastY, int lastW, int lastH) = (0, 0, 0, 0);
+
+			while (!cancellationToken.IsCancellationRequested)
+			{
+				var (x, y, w, h) = WindowHelper.GetWindowGeometry(gameWindow);
+
+				if (x != lastX || y != lastY || w != lastW || h != lastH)
+				{
+					onGeometryChanged((x, y, w, h));
+					(lastX, lastY, lastW, lastH) = (x, y, w, h);
+				}
+
+				await Task.Delay(GEOMETRY_UPDATE_INTERVAL_MS, cancellationToken);
+			}
+		}
+
+		/// <summary>
+		/// Waits for the game window to appear, with timeout and parent setup.
+		/// </summary>
+		public async Task<IntPtr> WaitForGameWindowAsync(
+			string gameExecutableName,
+			IntPtr menuWindow = default,
+			bool setupParent = false,
+			CancellationToken cancellationToken = default)
+		{
+			DateTime startTime = DateTime.UtcNow;
+
+			while (!cancellationToken.IsCancellationRequested)
+			{
+				if ((DateTime.UtcNow - startTime).TotalSeconds > WINDOW_WAIT_TIMEOUT_SECONDS)
+				{
+					throw new TimeoutException(
+						$"Game window not found after {WINDOW_WAIT_TIMEOUT_SECONDS} seconds");
+				}
+
+				IntPtr gameWindow = WindowHelper.GetWindowByExeName(gameExecutableName);
+
+				if (gameWindow != IntPtr.Zero)
+				{
+					if (setupParent && menuWindow != IntPtr.Zero)
+					{
+						WindowHelper.SetParent(menuWindow, gameWindow);
+						WindowHelper.FocusWindow(gameWindow);
+					}
+
+					return gameWindow;
+				}
+
+				await Task.Delay(WINDOW_CHECK_INTERVAL_MS, cancellationToken);
+			}
+
+			throw new OperationCanceledException("Waiting for game window was cancelled");
+		}
+
+		/// <summary>
+		/// Finds a window by class name and title (Windows only).
+		/// </summary>
+		public IntPtr FindWindowByName(string className, string windowTitle)
+		{
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				throw new PlatformNotSupportedException("FindWindowByName is Windows-only");
+
+			return WindowHelper.FindWindowA(className, windowTitle);
+		}
+
+		/// <summary>
+		/// Gets the game process by executable name.
+		/// </summary>
+		public Process? GetGameProcess(string gameExecutableName)
+		{
+			var processes = Process.GetProcessesByName(gameExecutableName.Replace(".exe", ""));
+			return processes.Length > 0 ? processes[0] : null;
+		}
+
+		/// <summary>
+		/// Returns the current position and size of a window in screen pixels.
+		/// Wraps the private WindowHelper method so other services can call it.
+		/// </summary>
+		public (int x, int y, int width, int height) GetWindowGeometry(IntPtr hwnd)
+		{
+			return WindowHelper.GetWindowGeometry(hwnd);
+		}
+
+		/// <summary>
+		/// Forces a window to be always-on-top using Win32 SetWindowPos.
+		/// More reliable than Avalonia's Topmost property when competing with
+		/// a fullscreen or topmost game window.
+		/// </summary>
+		public void SetTopmost(IntPtr hwnd)
+		{
+			WindowHelper.ForceTopmost(hwnd);
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Services\LauncherVersioner.cs ---
+----------------------------------------
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+
+namespace HLA_NoVRLauncher_Avalonia.Services
+{
+	public class LauncherVersioner
+	{
+		// Files that exist in vanilla HLA and get modified by the mod
+		// — these need to be backed up before install and restored on uninstall
+		private static readonly HashSet<string> FilesToBackup = new(
+			StringComparer.OrdinalIgnoreCase)
+		{
+			"game/hlvr/cfg/skill_manifest.cfg",
+			"game/hlvr/gameinfo.gi"
+		};
+
+		// Files/folders that are purely added by the mod
+		// — these get deleted on uninstall
+		private static readonly List<string> ModOnlyFiles = new()
+		{
+			"game/hlvr/scripts/vscripts/bindings.lua",
+			"game/hlvr/scripts/vscripts/check_useextra_distance.lua",
+			"game/hlvr/scripts/vscripts/crafting_station.lua",
+			"game/hlvr/scripts/vscripts/drop_object.lua",
+			"game/hlvr/scripts/vscripts/flashlight.lua",
+			"game/hlvr/scripts/vscripts/gravity_gloves.lua",
+			"game/hlvr/scripts/vscripts/hudhearts.lua",
+			"game/hlvr/scripts/vscripts/jumpfix.lua",
+			"game/hlvr/scripts/vscripts/main_menu_exec.lua",
+			"game/hlvr/scripts/vscripts/multitool.lua",
+			"game/hlvr/scripts/vscripts/novr.lua",
+			"game/hlvr/scripts/vscripts/novr_config.lua",
+			"game/hlvr/scripts/vscripts/novr_precache.lua",
+			"game/hlvr/scripts/vscripts/storage.lua",
+			"game/hlvr/scripts/vscripts/useextra.lua",
+			"game/hlvr/scripts/vscripts/version.lua",
+			"game/hlvr/scripts/vscripts/viewmodels.lua",
+			"game/hlvr/scripts/vscripts/viewmodels_animation.lua",
+			"game/hlvr/scripts/vscripts/viewmodels_precache.lua",
+			"game/hlvr/scripts/vscripts/vortenergyhit.lua",
+			"game/hlvr/scripts/vscripts/wristpockets.lua",
+			"game/hlvr/scripts/vscripts/wristpockets_precache.lua",
+		};
+
+		// Entire folders added by the mod — deleted on uninstall
+		private static readonly List<string> ModOnlyFolders = new()
+		{
+			"game/hlvr_addons/novr",
+			"game/novr",
+			"game/novr_steamdeck",
+			"game/novr_viewmodels"
+		};
+
+		public static string BackupPath(string gamePath, string backupLocation) =>
+			backupLocation switch
+			{
+				"Game Folder" => Path.Combine(gamePath, ".novr_launcher_backup"),
+				"AppData" => Path.Combine(
+									 Environment.GetFolderPath(
+										 Environment.SpecialFolder.ApplicationData),
+									 "HLA_NoVRLauncher", "backup"),
+				_ => Path.Combine(
+									 AppDomain.CurrentDomain.BaseDirectory,
+									 ".novr_launcher_backup")
+			};
+
+		/// <summary>
+		/// Reads the installed mod version string from the local version.lua file.
+		/// </summary>
+		public string? GetInstalledModVersion(string gamePath)
+		{
+			string versionFile = Path.Combine(gamePath,
+				"game", "hlvr", "scripts", "vscripts", "version.lua");
+
+			if (!File.Exists(versionFile))
+				return null;
+
+			try
+			{
+				foreach (var line in File.ReadAllLines(versionFile))
+				{
+					if (line.Contains("NoVR Version:"))
+					{
+						int start = line.IndexOf("NoVR Version:") +
+									"NoVR Version:".Length;
+						int end = line.LastIndexOf('"');
+						if (start > 0 && end > start)
+							return line.Substring(start, end - start).Trim();
+					}
+				}
+			}
+			catch { }
+
+			return null;
+		}
+
+		/// <summary>
+		/// Reads the mod branch and version from inside a zip file.
+		/// </summary>
+		public (string? version, string? branch) ReadZipInfo(string zipPath)
+		{
+			try
+			{
+				using var archive = ZipFile.OpenRead(zipPath);
+
+				foreach (var entry in archive.Entries)
+				{
+					if (!entry.FullName.EndsWith("version.lua",
+						StringComparison.OrdinalIgnoreCase))
+						continue;
+
+					using var stream = entry.Open();
+					using var reader = new StreamReader(stream);
+					string content = reader.ReadToEnd();
+
+					foreach (var line in content.Split('\n'))
+					{
+						if (!line.Contains("NoVR Version:")) continue;
+
+						int start = line.IndexOf("NoVR Version:") +
+									"NoVR Version:".Length;
+						int end = line.LastIndexOf('"');
+						if (start <= 0 || end <= start) continue;
+
+						string versionStr = line.Substring(
+							start, end - start).Trim();
+						var parts = versionStr.Split(' ');
+						string branch = parts.Length > 0
+							? parts[^1].ToLowerInvariant()
+							: "main";
+
+						return (versionStr, branch);
+					}
+				}
+			}
+			catch { }
+
+			return (null, null);
+		}
+
+		/// <summary>
+		/// Installs the mod from a local zip file into the game directory.
+		/// Strips the top-level folder from the zip (e.g. HLA-NoVR-main/)
+		/// and backs up vanilla files before overwriting them.
+		/// </summary>
+		public void InstallFromZip(
+			string zipPath,
+			string gamePath,
+			string backupLocation,
+			IProgress<double> onProgress,
+			Action<string> onStatus,
+			Action<string> onError)
+		{
+			try
+			{
+				if (!File.Exists(zipPath))
+				{
+					onError("Zip file not found.");
+					return;
+				}
+
+				if (!Directory.Exists(gamePath))
+				{
+					onError($"Game path not found: {gamePath}");
+					return;
+				}
+
+				onStatus("Reading zip file...");
+				using var archive = ZipFile.OpenRead(zipPath);
+
+				// Detect the top-level folder prefix to strip
+				// e.g. "HLA-NoVR-steam_deck/" 
+				string prefix = "";
+				var firstEntry = archive.Entries.FirstOrDefault();
+				if (firstEntry != null)
+				{
+					var parts = firstEntry.FullName.Split('/');
+					if (parts.Length > 1)
+						prefix = parts[0] + "/";
+				}
+
+				// Back up vanilla files before overwriting
+				onStatus("Backing up original game files...");
+				string backupDir = BackupPath(gamePath, backupLocation);
+				Directory.CreateDirectory(backupDir);
+
+				foreach (var fileToBackup in FilesToBackup)
+				{
+					string sourcePath = Path.Combine(gamePath,
+						fileToBackup.Replace('/', Path.DirectorySeparatorChar));
+					string backupFilePath = Path.Combine(backupDir,
+						fileToBackup.Replace('/', Path.DirectorySeparatorChar));
+
+					if (!File.Exists(sourcePath)) continue;
+					// Only back up if we don't already have a backup
+					if (File.Exists(backupFilePath)) continue;
+
+					Directory.CreateDirectory(
+						Path.GetDirectoryName(backupFilePath)!);
+					File.Copy(sourcePath, backupFilePath);
+				}
+
+				// Extract files, skipping the top-level folder and
+				// non-game files like README, LICENSE, .gitattributes
+				onStatus("Installing mod files...");
+				var gameEntries = archive.Entries
+					.Where(e => !string.IsNullOrEmpty(e.Name) &&
+								e.FullName.StartsWith(prefix + "game/",
+									StringComparison.OrdinalIgnoreCase))
+					.ToList();
+
+				int total = gameEntries.Count;
+				int current = 0;
+
+				foreach (var entry in gameEntries)
+				{
+					// Strip the top-level prefix to get the relative path
+					string relativePath = entry.FullName.Substring(prefix.Length);
+					string destPath = Path.Combine(gamePath,
+						relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+					Directory.CreateDirectory(
+						Path.GetDirectoryName(destPath)!);
+					entry.ExtractToFile(destPath, overwrite: true);
+
+					current++;
+					onProgress.Report((double)current / total);
+				}
+
+				onStatus("Mod installed successfully!");
+			}
+			catch (Exception ex)
+			{
+				onError($"Installation failed: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Uninstalls the mod by deleting mod-only files and folders,
+		/// then restoring backed-up vanilla files.
+		/// </summary>
+			public void UninstallMod(
+			string gamePath,
+			string backupLocation,
+			Action<string> onStatus,
+			Action<string> onError)
+		{
+			try
+			{
+				// Delete mod-only files
+				onStatus("Removing mod files...");
+				foreach (var file in ModOnlyFiles)
+				{
+					string fullPath = Path.Combine(gamePath,
+						file.Replace('/', Path.DirectorySeparatorChar));
+					if (File.Exists(fullPath))
+						File.Delete(fullPath);
+				}
+
+				// Delete mod-only folders
+				onStatus("Removing mod folders...");
+				foreach (var folder in ModOnlyFolders)
+				{
+					string fullPath = Path.Combine(gamePath,
+						folder.Replace('/', Path.DirectorySeparatorChar));
+					if (Directory.Exists(fullPath))
+						Directory.Delete(fullPath, recursive: true);
+				}
+
+				// Restore backed-up vanilla files
+				string backupDir = BackupPath(gamePath, backupLocation);
+				if (Directory.Exists(backupDir))
+				{
+					onStatus("Restoring original game files...");
+					foreach (var fileToRestore in FilesToBackup)
+					{
+						string backupFilePath = Path.Combine(backupDir,
+							fileToRestore.Replace('/',
+								Path.DirectorySeparatorChar));
+						string destPath = Path.Combine(gamePath,
+							fileToRestore.Replace('/',
+								Path.DirectorySeparatorChar));
+
+						if (!File.Exists(backupFilePath)) continue;
+						Directory.CreateDirectory(
+							Path.GetDirectoryName(destPath)!);
+						File.Copy(backupFilePath, destPath, overwrite: true);
+					}
+
+					// Clean up backup folder
+					Directory.Delete(backupDir, recursive: true);
+				}
+
+				onStatus("Mod uninstalled successfully!");
+			}
+			catch (Exception ex)
+			{
+				onError($"Uninstall failed: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Detects the installed mod branch from the local version.lua.
+		/// </summary>
+		public string? GetInstalledBranch(string gamePath)
+		{
+			string? version = GetInstalledModVersion(gamePath);
+			if (version == null) return null;
+			var parts = version.Split(' ');
+			return parts.Length > 0 ? parts[^1].ToLowerInvariant() : "main";
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Services\OverlayService.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using Avalonia.Threading;
+using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace HLA_NoVRLauncher_Avalonia.Services
+{
+	// ---------------------------------------------------------------------------
+	// State machine
+	// ---------------------------------------------------------------------------
+
+	/// <summary>
+	/// Every state the overlay can be in. Transitions are driven purely by
+	/// console.log events and user input â€” never by timers.
+	/// </summary>
+	public enum OverlayState
+	{
+		/// <summary>Window exists but is invisible. Game is running normally.</summary>
+		Hidden,
+
+		/// <summary>Game just launched and is showing the main menu.</summary>
+		MainMenu,
+
+		/// <summary>A level or save is loading. Overlay stays hidden.</summary>
+		Loading,
+
+		/// <summary>Player is in-game. Overlay is hidden.</summary>
+		InGame,
+
+		/// <summary>Player pressed ESC. Overlay is visible showing the pause menu.</summary>
+		Paused
+	}
+
+	// ---------------------------------------------------------------------------
+	// Service
+	// ---------------------------------------------------------------------------
+
+	/// <summary>
+	/// Manages the transparent overlay window that sits on top of the HLA game
+	/// window and acts as the in-game menu.
+	///
+	/// Responsibilities:
+	///   - Wait for hlvr.exe to appear, then create and position the overlay
+	///   - Keep overlay geometry in sync with the game window (10 ms loop)
+	///   - Tail console.log and drive the state machine from game events
+	///   - Send commands back to the game via main_menu_exec.lua + PAUSE key
+	/// </summary>
+	public sealed class OverlayService : IDisposable
+	{
+		// -----------------------------------------------------------------------
+		// Constants
+		// -----------------------------------------------------------------------
+
+		private const string LuaExecRelPath   = "game/hlvr/scripts/vscripts/main_menu_exec.lua";
+		private const string ConsoleLogRelPath = "game/hlvr/console.log";
+
+		// Lines the console monitor watches for
+		private const string LineMainMenu    = "[GameMenu] main_menu_mode";
+		private const string LinePause       = "[GameMenu] hide";
+		private const string LineAchievement = "[GameMenu] give_achievement";
+		private const string LineLoading     = "CHostStateMgr::QueueNewRequest( Loading";
+		private const string LineRestoring   = "CHostStateMgr::QueueNewRequest( Restoring Save";
+
+		// -----------------------------------------------------------------------
+		// Private state
+		// -----------------------------------------------------------------------
+
+		private readonly LauncherHelperService _helper;
+
+		private Window?  _window;
+		private IntPtr   _gameHwnd;
+		private string?  _gamePath;
+
+		private OverlayState _state = OverlayState.Hidden;
+
+		private CancellationTokenSource? _cts;
+		private Task? _geometryTask;
+		private Task? _consoleTask;
+
+		// -----------------------------------------------------------------------
+		// Public events
+		// -----------------------------------------------------------------------
+
+		/// <summary>Fired every time the overlay state changes.</summary>
+		public event Action<OverlayState>? StateChanged;
+
+		/// <summary>
+		/// Fired when the game sends a give_achievement command.
+		/// The string argument is the achievement ID.
+		/// </summary>
+		public event Action<string>? AchievementReceived;
+
+		/// <summary>Fired when the game window disappears (game closed/crashed).</summary>
+		public event Action? GameExited;
+
+		// -----------------------------------------------------------------------
+		// Public properties
+		// -----------------------------------------------------------------------
+
+		public OverlayState State => _state;
+
+		// -----------------------------------------------------------------------
+		// Constructor
+		// -----------------------------------------------------------------------
+
+		public OverlayService(LauncherHelperService helper)
+		{
+			_helper = helper ?? throw new ArgumentNullException(nameof(helper));
+		}
+
+		// -----------------------------------------------------------------------
+		// Initialisation
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Waits for hlvr.exe to appear, then creates and positions the overlay
+		/// window. Also starts the geometry sync loop and the console monitor.
+		///
+		/// The <paramref name="windowFactory"/> delegate is called on the UI thread
+		/// after the game window is found so callers can create their Avalonia
+		/// window normally.
+		/// </summary>
+		public async Task InitializeAsync(
+			string            gamePath,
+			Func<Window>      windowFactory,
+			CancellationToken cancellationToken = default)
+		{
+			if (string.IsNullOrWhiteSpace(gamePath))
+				throw new ArgumentException("gamePath cannot be empty", nameof(gamePath));
+
+			_gamePath = gamePath;
+			_cts      = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+			// 1. Wait for game window (blocks until hlvr.exe appears or timeout)
+			Console.WriteLine("[Overlay] Waiting for hlvr.exe...");
+			_gameHwnd = await _helper.WaitForGameWindowAsync(
+				"hlvr.exe",
+				cancellationToken: _cts.Token);
+
+			Console.WriteLine($"[Overlay] Game window found: 0x{_gameHwnd:X}");
+
+			// 2. Create the overlay window on the UI thread, position it immediately
+			await Dispatcher.UIThread.InvokeAsync(() =>
+			{
+				_window = windowFactory();
+				_window.Show();
+				SyncGeometry();
+
+				// Get the native Win32 handle and force topmost.
+				// Avalonia's Topmost="True" alone isn't enough to beat a game window â€”
+				// we need to call SetWindowPos(HWND_TOPMOST) directly.
+				IntPtr overlayHwnd = _window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+				Console.WriteLine($"[Overlay] Overlay hwnd: 0x{overlayHwnd:X}");
+
+				if (overlayHwnd != IntPtr.Zero)
+					_helper.SetTopmost(overlayHwnd);
+			});
+
+			Console.WriteLine("[Overlay] Window shown and forced topmost.");
+
+			// 3. Start background loops
+			_geometryTask = RunGeometryLoopAsync(_cts.Token);
+			_consoleTask  = RunConsoleMonitorAsync(_cts.Token);
+		}
+
+		// -----------------------------------------------------------------------
+		// Game command sending
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Sends a console command to the running game.
+		/// Flow: write Lua to main_menu_exec.lua -> send PAUSE key -> game executes.
+		/// </summary>
+		public async Task SendCommandAsync(string consoleCommand)
+		{
+			if (string.IsNullOrEmpty(_gamePath))
+				throw new InvalidOperationException("OverlayService is not initialised.");
+
+			string lua  = $"SendToConsole(\"{EscapeLua(consoleCommand)}\")";
+			string path = Path.Combine(_gamePath, LuaExecRelPath);
+
+			await File.WriteAllTextAsync(path, lua);
+			_helper.ExecuteCommand("exec", "HLA-NoVR-Launcher-Helper.exe");
+		}
+
+		// -----------------------------------------------------------------------
+		// Visibility helpers
+		// -----------------------------------------------------------------------
+
+		public void Show() => Dispatcher.UIThread.Post(() => _window?.Show());
+		public void Hide() => Dispatcher.UIThread.Post(() => _window?.Hide());
+
+		// -----------------------------------------------------------------------
+		// Dispose
+		// -----------------------------------------------------------------------
+
+		public void Dispose()
+		{
+			_cts?.Cancel();
+
+			try { _geometryTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
+			try { _consoleTask?.Wait(TimeSpan.FromSeconds(2));  } catch { }
+
+			_cts?.Dispose();
+
+			Dispatcher.UIThread.Post(() => _window?.Close());
+		}
+
+		// -----------------------------------------------------------------------
+		// State machine
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Transitions to a new state and shows/hides the window accordingly.
+		/// All callers are on the console-monitor background thread; Show/Hide
+		/// dispatch to the UI thread internally so this is safe to call from anywhere.
+		/// </summary>
+		private void TransitionTo(OverlayState next)
+		{
+			if (_state == next) return;
+
+			_state = next;
+			StateChanged?.Invoke(next);
+
+			switch (next)
+			{
+				case OverlayState.MainMenu:
+				case OverlayState.Paused:
+					Show();
+					break;
+
+				case OverlayState.Hidden:
+				case OverlayState.Loading:
+				case OverlayState.InGame:
+					Hide();
+					break;
+			}
+		}
+
+		/// <summary>
+		/// Interprets one new line from console.log and drives the state machine.
+		/// </summary>
+		private void HandleConsoleLine(string line)
+		{
+			if (line.Contains(LineMainMenu))
+			{
+				TransitionTo(OverlayState.MainMenu);
+			}
+			else if (line.Contains(LinePause))
+			{
+				// "[GameMenu] hide" means the game wants us to show the pause menu
+				TransitionTo(OverlayState.Paused);
+			}
+			else if (line.Contains(LineLoading) || line.Contains(LineRestoring))
+			{
+				TransitionTo(OverlayState.Loading);
+			}
+			else if (line.Contains(LineAchievement))
+			{
+				// "[GameMenu] give_achievement <id>"
+				string[] parts = line.Split(
+					new[] { "[GameMenu] give_achievement " },
+					StringSplitOptions.None);
+
+				if (parts.Length > 1)
+					AchievementReceived?.Invoke(parts[1].Trim());
+			}
+		}
+
+		// -----------------------------------------------------------------------
+		// Geometry sync loop
+		// -----------------------------------------------------------------------
+
+		private async Task RunGeometryLoopAsync(CancellationToken ct)
+		{
+			try
+			{
+				await _helper.MonitorGameWindowAsync(
+					_gameHwnd,
+					geometry =>
+					{
+						// MonitorGameWindowAsync only fires when geometry actually changes,
+						// so every invocation here is a real resize or move â€” apply it.
+						var (x, y, w, h) = geometry;
+						Dispatcher.UIThread.Post(() =>
+						{
+							if (_window == null) return;
+							_window.Position = new Avalonia.PixelPoint(x, y);
+							_window.Width    = w;
+							_window.Height   = h;
+						});
+					},
+					ct);
+			}
+			catch (OperationCanceledException) { }
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[OverlayService] Geometry loop error: {ex.Message}");
+				// Geometry loop dying almost always means the game window is gone
+				GameExited?.Invoke();
+			}
+		}
+
+		// -----------------------------------------------------------------------
+		// Console monitor (positional tail)
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Tails console.log from the last-read byte position, so each poll only
+		/// processes lines the game wrote since the previous poll. This avoids
+		/// re-scanning the entire file (which grows continuously) every 100 ms.
+		/// </summary>
+		private async Task RunConsoleMonitorAsync(CancellationToken ct)
+		{
+			string consolePath = Path.Combine(_gamePath!, ConsoleLogRelPath);
+			long   filePos     = 0;
+
+			try
+			{
+				while (!ct.IsCancellationRequested)
+				{
+					// The log file doesn't exist until the game has started up far enough
+					if (!File.Exists(consolePath))
+					{
+						await Task.Delay(500, ct);
+						continue;
+					}
+
+					try
+					{
+						using var fs = new FileStream(
+							consolePath,
+							FileMode.Open,
+							FileAccess.Read,
+							// Must share with hlvr.exe which keeps the file open for writing
+							FileShare.ReadWrite);
+
+						// Seek to where we left off; reset if the file was rotated/truncated
+						fs.Seek(filePos <= fs.Length ? filePos : 0, SeekOrigin.Begin);
+
+						using var reader = new StreamReader(fs);
+						string? line;
+						while ((line = reader.ReadLine()) != null)
+						{
+							if (!string.IsNullOrWhiteSpace(line))
+								HandleConsoleLine(line);
+						}
+
+						// Remember position so next poll starts from here
+						filePos = fs.Position;
+					}
+					catch (IOException)
+					{
+						// File briefly locked by the game â€” skip this poll
+					}
+
+					await Task.Delay(100, ct);
+				}
+			}
+			catch (OperationCanceledException) { }
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[OverlayService] Console monitor error: {ex.Message}");
+			}
+		}
+
+		// -----------------------------------------------------------------------
+		// Helpers
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Reads the current game window geometry and applies it to the overlay
+		/// immediately. Call once on startup before the geometry loop begins.
+		/// Must be called on the UI thread.
+		/// </summary>
+		private void SyncGeometry()
+		{
+			if (_window == null || _gameHwnd == IntPtr.Zero) return;
+
+			var (x, y, w, h) = _helper.GetWindowGeometry(_gameHwnd);
+			_window.Position = new Avalonia.PixelPoint(x, y);
+			_window.Width    = w;
+			_window.Height   = h;
+		}
+
+		/// <summary>Escapes a string for safe embedding inside a Lua string literal.</summary>
+		private static string EscapeLua(string s) =>
+			s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
+	}
+}
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Services\OwnershipChecker.cs ---
+----------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.IO;
+using Steamworks;
+
+namespace HLA_NoVRLauncher_Avalonia.Services
+{
+	internal class OwnershipChecker
+	{
+
+		private static readonly string MarkerPath =
+		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".novr");
+
+		/// <summary>
+		/// Checks if the user owns Half-Life: Alyx.
+		/// If not, creates a hidden, read-only .novr file in the user's home directory.
+		/// Returns true if owned, false if not.
+		/// </summary>
+		public static bool CheckAlyxOwnershipAndMark()
+		{
+			// Step 1: If piracy marker exists, skip Steam check
+			if (File.Exists(MarkerPath))
+			{
+				Console.WriteLine("Piracy marker found. Skipping Steam check.");
+				return false;
+			}
+
+			try
+			{
+				// Step 2: Initialize Steam API
+				if (!SteamAPI.Init())
+				{
+					Console.WriteLine("Steam API initialization failed. Is Steam running?");
+					return false;
+				}
+
+				// Step 3: Check ownership
+				AppId_t alyxAppId = (AppId_t)546560;
+				bool ownsAlyx = SteamApps.BIsSubscribedApp(alyxAppId);
+
+				// Step 4: If not owned, create marker
+				if (!ownsAlyx)
+				{
+					CreateNoVRMarker();
+				}
+
+				SteamAPI.Shutdown();
+				return ownsAlyx;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine("Error checking ownership: " + ex.Message);
+				return false;
+			}
+		}
+
+		/// <summary>
+		/// Creates a hidden, read-only .novr file in the user's home directory.
+		/// </summary>
+		private static void CreateNoVRMarker()
+		{
+			try
+			{
+				File.WriteAllText(MarkerPath, string.Empty);
+				File.SetAttributes(MarkerPath, FileAttributes.Hidden | FileAttributes.ReadOnly);
+				Console.WriteLine($"Created piracy marker at: {MarkerPath}");
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine("Failed to create .novr file: " + ex.Message);
+			}
+		}
+
+		/// <summary>
+		/// Deletes the piracy marker file if it exists.
+		/// </summary>
+		public static void RemoveNoVRMarker()
+		{
+			try
+			{
+				if (File.Exists(MarkerPath))
+				{
+					File.SetAttributes(MarkerPath, FileAttributes.Normal);
+					File.Delete(MarkerPath);
+					Console.WriteLine("Piracy marker removed.");
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine("Failed to remove .novr file: " + ex.Message);
+			}
+		}
+
+		/// <summary>
+		/// Checks if the piracy marker file exists.
+		/// </summary>
+		public static bool NoVRMarkerExists()
+		{
+			return File.Exists(MarkerPath);
+		}
+	}
+}
+
+
+
+
+
+========================================
+FOLDER: Styles
+========================================
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Styles\AppStyles.axaml ---
+----------------------------------------
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Styles.Resources>
+    <Color x:Key="Color.Background">#000000</Color>
+    <Color x:Key="Color.Surface">#151515</Color>
+    <Color x:Key="Color.SurfaceAlt">#292929</Color>
+    <Color x:Key="Color.Border">#292929</Color>
+    <Color x:Key="Color.TextPrimary">#FFFFFF</Color>
+    <Color x:Key="Color.TextSecondary">#1491fb</Color>
+    <Color x:Key="Color.Accent">#FB7E14</Color>
+    <Color x:Key="Color.AccentHover">#FB7E14</Color>
+    <Color x:Key="Color.AccentDeep">#FB7E14</Color>
+
+    <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}"/>
+    <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}"/>
+    <SolidColorBrush x:Key="Brush.SurfaceAlt" Color="{StaticResource Color.SurfaceAlt}"/>
+    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}"/>
+    <SolidColorBrush x:Key="Brush.TextPrimary" Color="{StaticResource Color.TextPrimary}"/>
+    <SolidColorBrush x:Key="Brush.TextSecondary" Color="{StaticResource Color.TextSecondary}"/>
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}"/>
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="{StaticResource Color.AccentHover}"/>
+    <SolidColorBrush x:Key="Brush.AccentDeep" Color="{StaticResource Color.AccentDeep}"/>
+  </Styles.Resources>
+
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{StaticResource Brush.Background}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+  </Style>
+
+  <Style Selector="TemplatedControl">
+    <Setter Property="FontSize" Value="14"/>
+  </Style>
+
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{StaticResource Brush.Surface}"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Padding" Value="16"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+  </Style>
+
+  <Style Selector="Button">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="Foreground" Value="White"/>
+    <Setter Property="Padding" Value="16,8"/>
+    <Setter Property="CornerRadius" Value="6"/>
+  </Style>
+  <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="CornerRadius" Value="6"/>
+  </Style>
+  <Style Selector="Button:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="Button.accent">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.AccentHover}"/>
+  </Style>
+
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="CheckBox:checked">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="CheckBox /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="CheckBox:checked /template/ Path">
+    <Setter Property="Fill" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="RadioButton">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="RadioButton:checked">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="RadioButton:checked /template/ Ellipse#CheckGlyph">
+    <Setter Property="Fill" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="TextBox">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+    <Setter Property="CornerRadius" Value="4"/>
+    <Setter Property="CaretBrush" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="TextBox:focus /template/ Border#Part_BorderElement">
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+  </Style>
+
+  <Style Selector="ComboBox">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+  </Style>
+  <Style Selector="ComboBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+  </Style>
+
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="{StaticResource Brush.Surface}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+  </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+  </Style>
+
+  <Style Selector="ProgressBar">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="Height" Value="4"/>
+  </Style>
+
+  <Style Selector="Slider /template/ RepeatButton#PART_SelectionRangeStart">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="Slider /template/ Thumb">
+    <Setter Property="Background" Value="{StaticResource Brush.TextPrimary}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="TabItem">
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+    <Setter Property="FontSize" Value="14"/>
+  </Style>
+  <Style Selector="TabItem:selected">
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+  <Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="ScrollViewer">
+    <Setter Property="Background" Value="Transparent"/>
+  </Style>
+  <Style Selector="ScrollBar /template/ Thumb">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+  </Style>
+
+  <Style Selector="Menu">
+    <Setter Property="Background" Value="{StaticResource Brush.Surface}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+  </Style>
+  <Style Selector="MenuItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="ToolTip">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+  </Style>
+
+  <Style Selector="TextBlock.section-title">
+    <Setter Property="FontSize" Value="24"/>
+    <Setter Property="FontWeight" Value="Bold"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
+  </Style>
+
+  <Style Selector="Separator">
+    <Setter Property="Background" Value="{StaticResource Brush.Border}"/>
+    <Setter Property="Height" Value="1"/>
+  </Style>
+
+  <Style Selector="Expander">
+    <Setter Property="Background" Value="{StaticResource Brush.Surface}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+  </Style>
+  <Style Selector="Expander /template/ ToggleButton#ExpanderHeader">
+    <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+  </Style>
+
+  <Style Selector="TextBlock.validPath">
+    <Setter Property="Foreground" Value="#1DB954"/>
+  </Style>
+  <Style Selector="TextBlock.invalidPath">
+    <Setter Property="Foreground" Value="#E53935"/>
+  </Style>
+
+</Styles>
+
+
+
+========================================
+FOLDER: ViewModels
+========================================
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\ViewModels\CrashLogViewModel.cs ---
+----------------------------------------
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HLA_NoVRLauncher_Avalonia.Models;
+using HLA_NoVRLauncher_Avalonia.Services;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+
+namespace HLA_NoVRLauncher_Avalonia.ViewModels
+{
+	public partial class CrashLogViewModel : ViewModelBase
+	{
+		private readonly SettingsService _settingsService = new();
+		private readonly GameService _gameService = new();
+
+		[ObservableProperty]
+		private bool _filterEnabled = false;
+
+		[ObservableProperty]
+		private string _logStatus = "No log loaded.";
+
+		[ObservableProperty]
+		private bool _isLoaded = false;
+
+		public ObservableCollection<LogLine> LogLines { get; } = new();
+
+		private string GetLogPath()
+		{
+			var settings = _settingsService.LoadSettings();
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+			string gamePath = string.IsNullOrEmpty(settings.GamePath)
+				? _gameService.GetDefaultGamePath(steamPath)
+				: settings.GamePath;
+
+			return Path.Combine(gamePath, "game", "hlvr", "console.log");
+		}
+
+		public CrashLogViewModel()
+		{
+			LoadLog();
+		}
+
+		[RelayCommand]
+		private void LoadLog()
+		{
+			LogLines.Clear();
+			string logPath = GetLogPath();
+
+			if (!File.Exists(logPath))
+			{
+				LogStatus = $"Log file not found at: {logPath}";
+				IsLoaded = false;
+				return;
+			}
+
+			var lines = File.ReadAllLines(logPath);
+			foreach (var line in lines)
+			{
+				var logLine = new LogLine(line);
+				LogLines.Add(logLine);
+			}
+
+			LogStatus = $"Loaded {lines.Length} lines from console.log";
+			IsLoaded = true;
+			ApplyFilter();
+		}
+
+		partial void OnFilterEnabledChanged(bool value)
+		{
+			ApplyFilter();
+		}
+
+		private void ApplyFilter()
+		{
+			foreach (var line in LogLines)
+			{
+				line.IsVisible = !FilterEnabled || line.IsErrorOrWarning;
+			}
+		}
+
+		[RelayCommand]
+		private void ClearLog()
+		{
+			string logPath = GetLogPath();
+			if (!File.Exists(logPath)) return;
+			File.WriteAllText(logPath, string.Empty);
+			LoadLog();
+		}
+	}
+
+	public partial class LogLine : ObservableObject
+	{
+		public string Text { get; }
+		public LogLineType Type { get; }
+		public bool IsErrorOrWarning =>
+			Type == LogLineType.Error || Type == LogLineType.Warning;
+
+		[ObservableProperty]
+		private bool _isVisible = true;
+
+		public LogLine(string text)
+		{
+			Text = text;
+
+			string lower = text.ToLowerInvariant();
+			if (lower.Contains("error") || lower.Contains("exception") ||
+				lower.Contains("fatal") || lower.Contains("crash"))
+				Type = LogLineType.Error;
+			else if (lower.Contains("warning") || lower.Contains("warn"))
+				Type = LogLineType.Warning;
+			else
+				Type = LogLineType.Normal;
+		}
+		public string TextColor => Type switch
+		{
+			LogLineType.Error => "#E53935",
+			LogLineType.Warning => "#FB7E14",
+			_ => "#FFFFFF"
+		};
+	}
+
+	public enum LogLineType
+	{
+		Normal,
+		Warning,
+		Error
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\ViewModels\HomeViewModel.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HLA_NoVRLauncher_Avalonia.Models;
+using HLA_NoVRLauncher_Avalonia.Services;
+using System;
+using System.Threading.Tasks;
+
+namespace HLA_NoVRLauncher_Avalonia.ViewModels
+{
+	public partial class HomeViewModel : ViewModelBase
+	{
+		// -----------------------------------------------------------------------
+		// Services
+		// -----------------------------------------------------------------------
+
+		private readonly GameService            _gameService      = new();
+		private readonly LaunchService          _launchService    = new();
+		private readonly SettingsService        _settingsService  = new();
+		private readonly LauncherVersioner      _versioner        = new();
+		private readonly LauncherHelperService  _helperService    = new();
+
+		// Kept alive for the duration of the game session; disposed on game exit.
+		private OverlayService? _overlayService;
+
+		// -----------------------------------------------------------------------
+		// Observable properties (unchanged from before)
+		// -----------------------------------------------------------------------
+
+		[ObservableProperty]
+		[NotifyCanExecuteChangedFor(nameof(LaunchGameCommand))]
+		[NotifyCanExecuteChangedFor(nameof(InstallModCommand))]
+		private bool _isBusy;
+
+		[ObservableProperty]
+		private LauncherStatus _status = LauncherStatus.CheckingStatus;
+
+		[ObservableProperty]
+		private double _installProgress = 0;
+
+		[ObservableProperty]
+		private bool _isInstalling;
+
+		[ObservableProperty]
+		private string _installStatusMessage = "";
+
+		[ObservableProperty]
+		private string _installedModVersion = "";
+
+		// -----------------------------------------------------------------------
+		// Computed properties
+		// -----------------------------------------------------------------------
+
+		public string StatusMessage => _status switch
+		{
+			LauncherStatus.Ready          => "Ready to Launch (NoVR)",
+			LauncherStatus.GameRunning    => "Game is running...",
+			LauncherStatus.MissingFiles   => "Half-Life: Alyx not found.",
+			LauncherStatus.SteamNotFound  => "Steam installation not found.",
+			LauncherStatus.CheckingStatus => "Checking game status...",
+			LauncherStatus.ModNotInstalled => "Mod not installed â€” click Install!",
+			_ => "Unknown status."
+		};
+
+		public string InstallButtonText => _status == LauncherStatus.ModNotInstalled
+			? "Install Mod"
+			: "Reinstall Mod";
+
+		public bool CanLaunch  => !IsBusy;
+		public bool CanInstall => !IsBusy;
+
+		// -----------------------------------------------------------------------
+		// Events â€” wired up by MainWindow.axaml.cs
+		// -----------------------------------------------------------------------
+
+		/// <summary>Minimise the launcher window when the game starts.</summary>
+		public event Action? RequestCloseLauncher;
+
+		/// <summary>Restore the launcher window when the game exits.</summary>
+		public event Action? RequestShowLauncher;
+
+		/// <summary>Navigate to the setup screen.</summary>
+		public event Action? RequestSetup;
+
+		/// <summary>
+		/// Factory that creates the overlay window.
+		/// Set by MainWindow.axaml.cs so that window construction stays in the
+		/// View layer (HomeViewModel never references GameMenuWindow directly).
+		///
+		/// OverlayService calls this on the UI thread, so it is safe to
+		/// construct an Avalonia Window inside the factory.
+		/// </summary>
+		public Func<Window>? OverlayWindowFactory { get; set; }
+
+		// -----------------------------------------------------------------------
+		// Constructor
+		// -----------------------------------------------------------------------
+
+		public HomeViewModel()
+		{
+			UpdateStatus();
+		}
+
+		// -----------------------------------------------------------------------
+		// Property change callbacks
+		// -----------------------------------------------------------------------
+
+		partial void OnStatusChanged(LauncherStatus value)
+		{
+			OnPropertyChanged(nameof(StatusMessage));
+			OnPropertyChanged(nameof(InstallButtonText));
+		}
+
+		// -----------------------------------------------------------------------
+		// Helpers
+		// -----------------------------------------------------------------------
+
+		private string ResolveGamePath()
+		{
+			LauncherSettings settings = _settingsService.LoadSettings();
+			if (!string.IsNullOrEmpty(settings.GamePath))
+				return settings.GamePath;
+
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+			if (string.IsNullOrEmpty(steamPath))
+				return "";
+
+			string detectedPath = _gameService.GetDefaultGamePath(steamPath);
+			settings.GamePath   = detectedPath;
+			_settingsService.SaveSettings(settings);
+			return detectedPath;
+		}
+
+		// -----------------------------------------------------------------------
+		// Launch command
+		// -----------------------------------------------------------------------
+
+		[RelayCommand(CanExecute = nameof(CanLaunch))]
+		private async Task LaunchGameAsync()
+		{
+			IsBusy = true;
+			Status = LauncherStatus.GameRunning;
+
+			LauncherSettings settings = _settingsService.LoadSettings();
+			_settingsService.SaveSettings(settings);
+
+			string gamePath = ResolveGamePath();
+
+			// Minimise the launcher before the game window appears
+			if (settings.CloseLauncherOnStart)
+				RequestCloseLauncher?.Invoke();
+
+			// ---- Launch the game ----
+			// The callback fires when the hlvr.exe process exits.
+			_launchService.LaunchGame(settings.CustomLaunchArgs, () =>
+			{
+				// Dispose the overlay first, then restore the launcher on the UI thread
+				_overlayService?.Dispose();
+				_overlayService = null;
+
+				Dispatcher.UIThread.Post(() =>
+				{
+					RequestShowLauncher?.Invoke();
+					IsBusy = false;
+					UpdateStatus();
+				});
+			}, settings);
+
+			// ---- Start the overlay (unless the game is using its own default menu) ----
+			// OverlayService.InitializeAsync blocks internally until hlvr.exe appears,
+			// so we fire it as a background task and let it catch up to the game process.
+			if (!settings.DefaultMenu && !string.IsNullOrEmpty(gamePath))
+			{
+				Func<Window>? factory = OverlayWindowFactory;
+
+				if (factory != null)
+				{
+					_overlayService = new OverlayService(_helperService);
+
+					// Log state transitions â€” useful while building the real menu
+					_overlayService.StateChanged += state =>
+						Console.WriteLine($"[Overlay] â†’ {state}");
+
+					// Log if the geometry loop detects the game window is gone
+					_overlayService.GameExited += () =>
+						Console.WriteLine("[Overlay] Game window lost.");
+
+					// Log achievement requests (handler goes here in a later step)
+					_overlayService.AchievementReceived += id =>
+						Console.WriteLine($"[Overlay] Achievement requested: {id}");
+
+					// Run on a thread-pool thread â€” InitializeAsync is fully async
+					// and dispatches window creation back to the UI thread itself.
+					_ = Task.Run(async () =>
+					{
+						try
+						{
+							Console.WriteLine("[Overlay] InitializeAsync starting...");
+							await _overlayService.InitializeAsync(gamePath, factory);
+						}
+						catch (OperationCanceledException)
+						{
+							// Game exited before overlay could initialise â€” normal.
+						}
+						catch (Exception ex)
+						{
+							Console.WriteLine($"[Overlay] Init failed: {ex.Message}");
+						}
+					});
+				}
+			}
+
+			await Task.CompletedTask;
+		}
+
+		// -----------------------------------------------------------------------
+		// Install command (unchanged)
+		// -----------------------------------------------------------------------
+
+		[RelayCommand(CanExecute = nameof(CanInstall))]
+		private async Task InstallModAsync()
+		{
+			var topLevel = Avalonia.Application.Current?.ApplicationLifetime is
+				IClassicDesktopStyleApplicationLifetime desktop
+					? desktop.MainWindow
+					: null;
+
+			if (topLevel == null) return;
+
+			var files = await Avalonia.Controls.TopLevel
+				.GetTopLevel(topLevel)!
+				.StorageProvider
+				.OpenFilePickerAsync(new FilePickerOpenOptions
+				{
+					Title = "Select HLA NoVR Mod zip file",
+					AllowMultiple = false,
+					FileTypeFilter = new[]
+					{
+						new FilePickerFileType("Zip files") { Patterns = new[] { "*.zip" } }
+					}
+				});
+
+			if (files.Count == 0) return;
+
+			string zipPath  = files[0].Path.LocalPath;
+			string gamePath = ResolveGamePath();
+
+			if (string.IsNullOrEmpty(gamePath))
+			{
+				InstallStatusMessage = "Game path not found. Please run Quick Setup.";
+				return;
+			}
+
+			var (version, branch) = _versioner.ReadZipInfo(zipPath);
+
+			if (version == null)
+			{
+				InstallStatusMessage = "Invalid zip â€” could not find version.lua inside. Make sure you downloaded the correct file from GitHub.";
+				return;
+			}
+
+			LauncherSettings settings = _settingsService.LoadSettings();
+			if (branch != null && branch != settings.ModBranch && settings.ModBranch != "main")
+			{
+				InstallStatusMessage = $"Wrong zip! This zip is for the '{branch}' branch but you have '{settings.ModBranch}' selected in Settings.";
+				return;
+			}
+
+			IsBusy            = true;
+			IsInstalling      = true;
+			InstallProgress   = 0;
+			InstallStatusMessage = "Starting...";
+
+			var progress = new Progress<double>(p =>
+				Dispatcher.UIThread.Post(() => InstallProgress = p));
+
+			await Task.Run(() => _versioner.InstallFromZip(
+				zipPath,
+				gamePath,
+				settings.BackupLocation,
+				progress,
+				msg => Dispatcher.UIThread.Post(() => InstallStatusMessage = msg),
+				err => Dispatcher.UIThread.Post(() =>
+				{
+					InstallStatusMessage = err;
+					IsInstalling = false;
+					IsBusy       = false;
+				})
+			));
+
+			IsInstalling = false;
+			IsBusy       = false;
+			UpdateStatus();
+		}
+
+		// -----------------------------------------------------------------------
+		// Other commands (unchanged)
+		// -----------------------------------------------------------------------
+
+		[RelayCommand]
+		private void QuickSetup() => RequestSetup?.Invoke();
+
+		// -----------------------------------------------------------------------
+		// Status check
+		// -----------------------------------------------------------------------
+
+		public void UpdateStatus()
+		{
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+
+			if (string.IsNullOrEmpty(steamPath))
+			{
+				Status = LauncherStatus.SteamNotFound;
+				return;
+			}
+
+			string gamePath = ResolveGamePath();
+
+			if (string.IsNullOrEmpty(gamePath) || !_gameService.IsGameInstalled(gamePath))
+			{
+				Status = LauncherStatus.MissingFiles;
+				return;
+			}
+
+			string? modVersion = _versioner.GetInstalledModVersion(gamePath);
+			if (modVersion == null)
+			{
+				Status = LauncherStatus.ModNotInstalled;
+				InstalledModVersion = "";
+				return;
+			}
+
+			InstalledModVersion = $"Mod version: {modVersion}";
+			Status = LauncherStatus.Ready;
+		}
+	}
+}
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\ViewModels\MainWindowViewModel.cs ---
+----------------------------------------
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HLA_NoVRLauncher_Avalonia.Models;
+using HLA_NoVRLauncher_Avalonia.Services;
+using System;
+using System.Reflection;
+
+namespace HLA_NoVRLauncher_Avalonia.ViewModels
+{
+	public partial class MainWindowViewModel : ViewModelBase
+	{
+		private readonly SettingsService _settingsService = new();
+
+		[ObservableProperty]
+		private bool _isSidebarOpen = true;
+
+		[ObservableProperty]
+		private object _currentPage;
+
+		[ObservableProperty]
+		private LauncherSettings _settings;
+
+		public static string LauncherVersion =>
+			"v" + (Assembly.GetExecutingAssembly()
+						   .GetName().Version?.ToString(3) ?? "1.0.0");
+
+		public double SidebarWidth => IsSidebarOpen ? 220 : 60;
+
+		public MainWindowViewModel()
+		{
+			_settings = _settingsService.LoadSettings();
+
+			if (_settings.FirstRun)
+			{
+				var setup = new SetupViewModel();
+				setup.SetupComplete += () =>
+				{
+					_settings = _settingsService.LoadSettings();
+					CurrentPage = new HomeViewModel();
+				};
+				_currentPage = setup;
+			}
+			else
+			{
+				_currentPage = new HomeViewModel();
+			}
+		}
+
+		partial void OnIsSidebarOpenChanged(bool value)
+		{
+			OnPropertyChanged(nameof(SidebarWidth));
+		}
+
+		[RelayCommand]
+		private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
+
+		[RelayCommand]
+		private void NavigateMain()
+		{
+			if (_settings.FirstRun)
+			{
+				var setup = new SetupViewModel();
+				setup.SetupComplete += () =>
+				{
+					_settings = _settingsService.LoadSettings();
+					CurrentPage = new HomeViewModel();
+				};
+				CurrentPage = setup;
+			}
+			else
+			{
+				CurrentPage = new HomeViewModel();
+			}
+		}
+
+		[RelayCommand]
+		private void RunSetup()
+		{
+			var setup = new SetupViewModel();
+			setup.SetupComplete += () =>
+			{
+				_settings = _settingsService.LoadSettings();
+				CurrentPage = new HomeViewModel();
+			};
+			CurrentPage = setup;
+		}
+
+		[RelayCommand]
+		private void NavigateSettings()
+		{
+			_settings = _settingsService.LoadSettings();
+			CurrentPage = new SettingsViewModel(_settings);
+		}
+
+		[RelayCommand]
+		private void NavigateLog() => CurrentPage = new CrashLogViewModel();
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\ViewModels\SettingsViewModel.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HLA_NoVRLauncher_Avalonia.Models;
+using HLA_NoVRLauncher_Avalonia.Services;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace HLA_NoVRLauncher_Avalonia.ViewModels
+{
+    public partial class SettingsViewModel : ViewModelBase
+    {
+        private readonly SettingsService _settingsService;
+        private readonly GameService _gameService;
+
+        [ObservableProperty]
+        private LauncherSettings _settings;
+
+        [ObservableProperty]
+        private string _selectedBranch;
+
+		[ObservableProperty]
+		private string _detectedBranch = "Not detected";
+
+		[ObservableProperty]
+        private string _selectedResolution;
+
+        [ObservableProperty]
+        private string _gamePath = "";
+
+        public List<string> AvailableBranches { get; } = new()
+        {
+            "main",
+            "mods",
+            "steam_deck"
+        };
+
+        public List<string> CommonResolutions { get; } = new()
+        {
+            "1280x720",
+            "1920x1080",
+            "2560x1440",
+            "3840x2160",
+            "Custom"
+        };
+		public List<string> BackupLocations { get; } = new()
+        {
+	        "Launcher",
+	        "Game Folder",
+	        "AppData"
+        };
+
+		public SettingsViewModel(LauncherSettings currentSettings)
+		{
+			_settingsService = new SettingsService();
+			_gameService = new GameService();
+			_settings = currentSettings;
+
+			string res = $"{currentSettings.FullscreenWidth}x{currentSettings.FullscreenHeight}";
+			_selectedResolution = CommonResolutions.Contains(res) ? res : "Custom";
+
+			if (!string.IsNullOrEmpty(currentSettings.GamePath))
+				_gamePath = currentSettings.GamePath;
+			else
+			{
+				string steamPath = _gameService.GetSteamInstallPath() ?? "";
+				_gamePath = !string.IsNullOrEmpty(steamPath)
+					? _gameService.GetDefaultGamePath(steamPath)
+					: "";
+			}
+
+			// Detect installed branch
+			var versioner = new LauncherVersioner();
+			string? branch = versioner.GetInstalledBranch(_gamePath);
+			_detectedBranch = branch switch
+			{
+				"main" => "Stable Branch - No Mods",
+				"mods" => "Stable Branch - Community Mods",
+				"steam_deck" => "Steam Deck Branch - Linux / Steam Deck Users",
+				null => "Not detected",
+				_ => branch
+			};
+
+			// Auto-save on any change
+			PropertyChanged += (_, _) => Save();
+			Settings.PropertyChanged += (_, _) => Save();
+		}
+
+		private void Save()
+        {
+            Settings.ModBranch = SelectedBranch;
+            Settings.GamePath = GamePath;
+            _settingsService.SaveSettings(Settings);
+        }
+
+        partial void OnSelectedBranchChanged(string value)
+        {
+            Settings.ModBranch = value;
+        }
+
+        partial void OnSelectedResolutionChanged(string value)
+        {
+            if (value == "Custom") return;
+            var parts = value.Split('x');
+            if (parts.Length == 2 &&
+                int.TryParse(parts[0], out int w) &&
+                int.TryParse(parts[1], out int h))
+            {
+                Settings.FullscreenWidth = w;
+                Settings.FullscreenHeight = h;
+            }
+        }
+
+        partial void OnGamePathChanged(string value)
+        {
+            Settings.GamePath = value;
+        }
+
+        [RelayCommand]
+        private async Task BrowseGamePathAsync()
+        {
+            var topLevel = TopLevel.GetTopLevel(
+                Avalonia.Application.Current?.ApplicationLifetime is
+                Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow
+                    : null);
+
+            if (topLevel == null) return;
+
+            var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions
+                {
+                    Title = "Select Half-Life: Alyx folder",
+                    AllowMultiple = false
+                });
+
+            if (folders.Count > 0)
+                GamePath = folders[0].Path.LocalPath;
+        }
+
+		[RelayCommand]
+		private async Task UninstallModAsync()
+		{
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+			string gamePath = string.IsNullOrEmpty(_settings.GamePath)
+				? _gameService.GetDefaultGamePath(steamPath)
+				: _settings.GamePath;
+
+			await Task.Run(() => new LauncherVersioner().UninstallMod(
+				gamePath,
+				_settings.BackupLocation,
+				onStatus: msg => System.Diagnostics.Debug.WriteLine(msg),
+				onError: err => System.Diagnostics.Debug.WriteLine(err)
+			));
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\ViewModels\SetupViewModel.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform.Storage;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HLA_NoVRLauncher_Avalonia.Models;
+using HLA_NoVRLauncher_Avalonia.Services;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace HLA_NoVRLauncher_Avalonia.ViewModels
+{
+	public partial class SetupViewModel : ViewModelBase
+	{
+		private readonly SettingsService _settingsService = new();
+		private readonly GameService _gameService = new();
+		public bool IsStep0 => CurrentStep == 0;
+		public bool IsStep1 => CurrentStep == 1;
+
+		[ObservableProperty]
+		private int _currentStep = 0;
+
+		[ObservableProperty]
+		private string _gamePath = "";
+
+		[ObservableProperty]
+		private string _selectedBranch = "main";
+
+		[ObservableProperty]
+		private bool _gamePathValid = false;
+
+		[ObservableProperty]
+		private string _gamePathMessage = "";
+
+		[ObservableProperty]
+		private string _gamePathMessageColor = "#E53935";
+
+		public List<string> AvailableBranches { get; } = new()
+		{
+			"main",
+			"mods",
+			"steam_deck"
+		};
+
+		// Fired when setup is complete
+		public event Action? SetupComplete;
+
+		public SetupViewModel()
+		{
+			// Try to auto-detect game path
+			string steamPath = _gameService.GetSteamInstallPath() ?? "";
+			if (!string.IsNullOrEmpty(steamPath))
+			{
+				string detected = _gameService.GetDefaultGamePath(steamPath);
+				if (_gameService.IsGameInstalled(detected))
+				{
+					GamePath = detected;
+					ValidateGamePath(detected);
+				}
+			}
+		}
+
+		partial void OnGamePathChanged(string value)
+		{
+			ValidateGamePath(value);
+		}
+
+		private void ValidateGamePath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				GamePathValid = false;
+				GamePathMessage = "";
+				GamePathMessageColor = "#E53935";
+				return;
+			}
+
+			if (_gameService.IsGameInstalled(path))
+			{
+				GamePathValid = true;
+				GamePathMessage = "✓ Half-Life: Alyx found!";
+				GamePathMessageColor = "#1DB954";
+			}
+			else
+			{
+				GamePathValid = false;
+				GamePathMessage = "✗ Half-Life: Alyx not found at this path.";
+				GamePathMessageColor = "#E53935";
+			}
+		}
+
+		[RelayCommand]
+		private async Task BrowseAsync()
+		{
+			var topLevel = TopLevel.GetTopLevel(
+				Avalonia.Application.Current?.ApplicationLifetime is
+				IClassicDesktopStyleApplicationLifetime desktop
+					? desktop.MainWindow
+					: null);
+
+			if (topLevel == null) return;
+
+			var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(
+				new FolderPickerOpenOptions
+				{
+					Title = "Select your Half-Life: Alyx folder",
+					AllowMultiple = false
+				});
+
+			if (folders.Count > 0)
+				GamePath = folders[0].Path.LocalPath;
+		}
+
+		[RelayCommand]
+		private void Next()
+		{
+			if (CurrentStep < 1)
+				CurrentStep++;
+		}
+
+		[RelayCommand]
+		private void Back()
+		{
+			if (CurrentStep > 0)
+				CurrentStep--;
+		}
+
+		[RelayCommand]
+		private void Finish()
+		{
+			var settings = _settingsService.LoadSettings();
+			settings.GamePath = GamePath;
+			settings.FirstRun = false;
+			_settingsService.SaveSettings(settings);
+			SetupComplete?.Invoke();
+		}
+
+		partial void OnCurrentStepChanged(int value)
+		{
+			OnPropertyChanged(nameof(IsStep0));
+			OnPropertyChanged(nameof(IsStep1));
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\ViewModels\ViewModelBase.cs ---
+----------------------------------------
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace HLA_NoVRLauncher_Avalonia.ViewModels
+{
+	public class ViewModelBase : ObservableObject
+	{
+	}
+}
+
+
+
+========================================
+FOLDER: Views
+========================================
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\CrashLogView.axaml ---
+----------------------------------------
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+    x:Class="HLA_NoVRLauncher_Avalonia.Views.CrashLogView"
+    x:DataType="vm:CrashLogViewModel">
+
+    <Grid RowDefinitions="Auto, *, Auto" Margin="20">
+
+        <Grid Grid.Row="0"
+              ColumnDefinitions="*, Auto, Auto, Auto"
+              Margin="0,0,0,12">
+
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="CRASH LOG"
+                           Classes="section-title"/>
+                <TextBlock Text="{Binding LogStatus}"
+                           FontSize="12"
+                           Foreground="{StaticResource Brush.TextSecondary}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center"
+                        Margin="0,0,12,0">
+                <TextBlock Text="Errors &amp; Warnings only"
+                           VerticalAlignment="Center"
+                           FontSize="12"/>
+                <ToggleSwitch IsChecked="{Binding FilterEnabled}"
+                              OnContent=""
+                              OffContent=""/>
+            </StackPanel>
+
+            <Button Grid.Column="2"
+                    Content="â†» Refresh"
+                    Command="{Binding LoadLogCommand}"
+                    Margin="0,0,8,0"
+                    VerticalAlignment="Center"/>
+
+            <Button Grid.Column="3"
+                    Content="ðŸ—‘ Clear Log"
+                    Command="{Binding ClearLogCommand}"
+                    VerticalAlignment="Center"
+                    Foreground="White"
+                    Background="#8B0000"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Classes="card"
+                Padding="0"
+                Background="#1E1E1E"
+                CornerRadius="4">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding LogLines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:LogLine}">
+                            <Border IsVisible="{Binding IsVisible}"
+                                    Padding="12,3">
+                                <TextBlock Text="{Binding Text}"
+                                           FontFamily="Consolas, Monospace"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Foreground="{Binding TextColor}"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <TextBlock Grid.Row="2"
+                   Text="Log is read from: game/hlvr/console.log in your HLA installation. Launch the game with -condebug to enable logging."
+                   FontSize="11"
+                   Foreground="{StaticResource Brush.TextSecondary}"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0"/>
+
+    </Grid>
+
+</UserControl>
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\CrashLogView.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{
+	public partial class CrashLogView : UserControl
+	{
+		public CrashLogView()
+		{
+			InitializeComponent();
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\GameMenuWindow.axaml ---
+----------------------------------------
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HLA_NoVRLauncher_Avalonia.Views.GameMenuWindow"
+        Title="Game Menu"
+        SystemDecorations="None"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        Width="960"
+        Height="600">
+
+    <!--
+        Step 4 â€” Positioning proof-of-concept.
+
+        This window intentionally contains nothing but a small labelled box.
+        When you launch the game and see this box sitting over the game window,
+        geometry sync is confirmed to be working. Replace this content with the
+        real menu panels in steps 7+.
+    -->
+    <Grid Background="Transparent">
+
+        <!-- Coloured indicator box â€” centred in the overlay -->
+        <Border HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                BorderBrush="#CF9F13"
+                BorderThickness="2"
+                CornerRadius="4"
+                Background="#CC000000"
+                Padding="24 16">
+
+            <StackPanel Spacing="6">
+
+                <TextBlock Text="Game Menu Overlay"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           Foreground="#CF9F13"
+                           HorizontalAlignment="Center" />
+
+                <TextBlock Text="Step 4 â€” Geometry sync test"
+                           FontSize="13"
+                           Foreground="White"
+                           HorizontalAlignment="Center" />
+
+                <TextBlock Text="Seeing this over the game window means positioning works."
+                           FontSize="11"
+                           Foreground="#AAAAAA"
+                           HorizontalAlignment="Center" />
+
+            </StackPanel>
+
+        </Border>
+
+    </Grid>
+
+</Window>
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\GameMenuWindow.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{
+	/// <summary>
+	/// The transparent overlay window that sits on top of the HLA game window.
+	/// This code-behind is intentionally minimal â€” all behaviour lives in
+	/// OverlayService and (eventually) GameMenuViewModel.
+	/// </summary>
+	public partial class GameMenuWindow : Window
+	{
+		public GameMenuWindow()
+		{
+			InitializeComponent();
+		}
+	}
+}
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\HomeView.axaml ---
+----------------------------------------
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+    x:Class="HLA_NoVRLauncher_Avalonia.Views.HomeView"
+    x:DataType="vm:HomeViewModel">
+
+    <Panel>
+
+        <!-- Background "Video" -->
+        <Image x:Name="VideoBackground"
+               Stretch="UniformToFill"
+               IsHitTestVisible="False"/>
+
+        <!-- Dark overlay -->
+        <Border Background="#66000000"
+                IsHitTestVisible="False"/>
+
+        <!-- Main layout -->
+        <Grid RowDefinitions="*, Auto">
+
+            <StackPanel Grid.Row="0"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="15">
+
+                        <!-- Logo -->
+                <Image Source="avares://HLA_NoVRLauncher_Avalonia/Assets/logo.png"
+                       Width="300"
+                       HorizontalAlignment="Center"/>
+                <Button Content="Play"
+                        Width="200"
+                        Height="40"
+                        HorizontalAlignment="Center"
+                        HorizontalContentAlignment="Center"
+                        VerticalAlignment="Center"
+                        Classes="accent"
+                        Command="{Binding LaunchGameCommand}"
+                        IsEnabled="{Binding CanLaunch}"/>
+
+                <Button Content="{Binding InstallButtonText}"
+                        Width="200"
+                        Height="40"
+                        HorizontalAlignment="Center"
+                        HorizontalContentAlignment="Center"
+                        VerticalAlignment="Center"
+                        Command="{Binding InstallModCommand}"
+                        IsEnabled="{Binding CanInstall}"/>
+
+                <StackPanel IsVisible="{Binding IsInstalling}"
+                            Width="200"
+                            Spacing="6">
+                    <ProgressBar Value="{Binding InstallProgress}"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Height="6"/>
+                    <TextBlock Text="{Binding InstallStatusMessage}"
+                               Foreground="White"
+                               FontSize="12"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+                <TextBlock Text="{Binding InstalledModVersion}"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           FontSize="11"
+                           HorizontalAlignment="Center"/>
+
+            </StackPanel>
+
+            <!-- Status Bar -->
+            <Border Grid.Row="1"
+                    Height="50"
+                    Background="{StaticResource Brush.SurfaceAlt}"
+                    IsVisible="{Binding IsBusy}">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="20,0">
+                    <TextBlock Text="STATUS:"
+                               Foreground="{StaticResource Brush.Accent}"
+                               FontWeight="Bold"
+                               Margin="0,0,10,0"/>
+                    <TextBlock Text="{Binding StatusMessage}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Quick Setup Button -->
+            <Button Grid.Column="1"
+                    Content="âš¡ Quick Setup"
+                    Command="{Binding QuickSetupCommand}"
+                    Classes="accent"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,16,8"
+                    FontSize="12"
+                    Padding="12,6"/>
+        </Grid>
+
+    </Panel>
+
+</UserControl>
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\HomeView.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using HLA_NoVRLauncher_Avalonia.Services;
+using LibVLCSharp.Shared;
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{
+	public partial class HomeView : UserControl, IDisposable
+	{
+		private readonly LibVLC _libVLC;
+		private MediaPlayer _mediaPlayer;
+		private WriteableBitmap? _bitmap;
+		private ILockedFramebuffer? _lockedBuffer;
+		private const uint VideoWidth = 1280;
+		private const uint VideoHeight = 720;
+		private string? _videoPath;
+		private bool _isMuted;
+		private bool _disposed;
+
+		public HomeView()
+		{
+			InitializeComponent();
+
+			Core.Initialize();
+			_libVLC = new LibVLC("--no-video-title-show");
+			_mediaPlayer = CreateMediaPlayer();
+
+			AttachedToVisualTree += (_, _) =>
+			{
+				Dispatcher.UIThread.Post(PlayVideo, DispatcherPriority.Loaded);
+			};
+
+			DataContextChanged += (_, _) =>
+			{
+				if (DataContext is ViewModels.HomeViewModel)
+				{
+					var settings = new SettingsService().LoadSettings();
+					SetMuted(settings.IsMuted);
+				}
+			};
+		}
+
+		private MediaPlayer CreateMediaPlayer()
+		{
+			var player = new MediaPlayer(_libVLC);
+			player.SetVideoCallbacks(Lock, Unlock, Display);
+			player.SetVideoFormat("BGRA", VideoWidth, VideoHeight, VideoWidth * 4);
+			player.EndReached += OnEndReached;
+			player.Playing += OnPlaying;
+			return player;
+		}
+
+		private void DestroyMediaPlayer()
+		{
+			_mediaPlayer.EndReached -= OnEndReached;
+			_mediaPlayer.Playing -= OnPlaying;
+			_mediaPlayer.Stop();
+			_mediaPlayer.Dispose();
+		}
+
+		private IntPtr Lock(IntPtr opaque, IntPtr planes)
+		{
+			_bitmap ??= new WriteableBitmap(
+				new Avalonia.PixelSize((int)VideoWidth, (int)VideoHeight),
+				new Avalonia.Vector(96, 96),
+				PixelFormat.Bgra8888,
+				AlphaFormat.Opaque
+			);
+
+			_lockedBuffer = _bitmap.Lock();
+			Marshal.WriteIntPtr(planes, _lockedBuffer.Address);
+			return _lockedBuffer.Address;
+		}
+
+		private void Unlock(IntPtr opaque, IntPtr picture, IntPtr planes)
+		{
+			_lockedBuffer?.Dispose();
+			_lockedBuffer = null;
+		}
+
+		private void Display(IntPtr opaque, IntPtr picture)
+		{
+			Dispatcher.UIThread.Post(() =>
+			{
+				if (VideoBackground != null && _bitmap != null)
+				{
+					VideoBackground.Source = null;
+					VideoBackground.Source = _bitmap;
+				}
+			}, DispatcherPriority.Render);
+		}
+
+		private void OnPlaying(object? sender, EventArgs e)
+		{
+			_mediaPlayer.Mute = _isMuted;
+		}
+
+		private void OnEndReached(object? sender, EventArgs e)
+		{
+			if (_disposed) return;
+
+			System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+			{
+				if (_disposed) return;
+
+				DestroyMediaPlayer();
+				_mediaPlayer = CreateMediaPlayer();
+
+				if (_videoPath != null)
+				{
+					using var media = new Media(_libVLC, _videoPath);
+					_mediaPlayer.Play(media);
+				}
+			});
+		}
+
+		private void PlayVideo()
+		{
+			_videoPath = Path.Combine(
+				AppDomain.CurrentDomain.BaseDirectory,
+				"Assets",
+				"background.mp4"
+			);
+
+			if (!File.Exists(_videoPath))
+				return;
+
+			var settings = new SettingsService().LoadSettings();
+			_isMuted = settings.IsMuted;
+
+			using var media = new Media(_libVLC, _videoPath);
+			_mediaPlayer.Play(media);
+		}
+
+		public void SetMuted(bool muted)
+		{
+			_isMuted = muted;
+			_mediaPlayer.Mute = muted;
+		}
+
+		public void Dispose()
+		{
+			_disposed = true;
+			DestroyMediaPlayer();
+			_lockedBuffer?.Dispose();
+			_libVLC.Dispose();
+			_bitmap?.Dispose();
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\MainWindow.axaml ---
+----------------------------------------
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+        xmlns:views="using:HLA_NoVRLauncher_Avalonia.Views"
+        x:Class="HLA_NoVRLauncher_Avalonia.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Background="#050505"
+        Title="HLA NoVR Launcher"
+        WindowStartupLocation="CenterScreen"
+        Width="1280" Height="720">
+
+    <Grid ColumnDefinitions="Auto, *">
+
+        <Border Grid.Column="0"
+                Width="{Binding SidebarWidth}"
+                Background="{StaticResource Brush.Surface}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,0,1,0"
+                ClipToBounds="True">
+
+            <DockPanel>
+
+                <!-- Top: toggle + title -->
+                <StackPanel DockPanel.Dock="Top" Spacing="0">
+                    <Button Command="{Binding ToggleSidebarCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Background="Transparent"
+                            Padding="12,10">
+                        <TextBlock Text="â˜°"
+                                   FontSize="18"
+                                   Foreground="{StaticResource Brush.TextSecondary}"/>
+                    </Button>
+
+                    <TextBlock Text="Half-Life: Alyx NoVR"
+                               IsVisible="{Binding IsSidebarOpen}"
+                               FontWeight="Black"
+                               FontSize="15"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               Margin="16,4,16,16"
+                               TextWrapping="Wrap"/>
+
+                    <Separator/>
+                </StackPanel>
+
+                <!-- Bottom: version only -->
+                <StackPanel DockPanel.Dock="Bottom"
+                            Margin="8,0,8,12"
+                            Spacing="8"
+                            IsVisible="{Binding IsSidebarOpen}">
+                    <Separator/>
+                    <TextBlock Text="{Binding LauncherVersion}"
+                               FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               Margin="8,0,0,0"/>
+                </StackPanel>
+
+                <!-- Nav buttons -->
+                <StackPanel Spacing="4" Margin="8,8,8,0">
+
+                    <Button Command="{Binding NavigateMainCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="10,8"
+                            ToolTip.Tip="Home">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="ðŸ " FontSize="16"/>
+                            <TextBlock Text="Home"
+                                       IsVisible="{Binding IsSidebarOpen}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavigateSettingsCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="10,8"
+                            ToolTip.Tip="Settings">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="âš™" FontSize="16"/>
+                            <TextBlock Text="Settings"
+                                       IsVisible="{Binding IsSidebarOpen}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Command="{Binding NavigateLogCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="10,8"
+                            ToolTip.Tip="Crash Log">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="ðŸ“‹" FontSize="16"/>
+                            <TextBlock Text="Crash Log"
+                                       IsVisible="{Binding IsSidebarOpen}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <ContentControl Grid.Column="1"
+                        Content="{Binding CurrentPage}">
+            <ContentControl.DataTemplates>
+                <DataTemplate DataType="{x:Type vm:HomeViewModel}">
+                    <views:HomeView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                    <views:SettingsView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:SetupViewModel}">
+                    <views:SetupView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:CrashLogViewModel}">
+                    <views:CrashLogView />
+                </DataTemplate>
+            </ContentControl.DataTemplates>
+        </ContentControl>
+
+    </Grid>
+</Window>
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\MainWindow.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using HLA_NoVRLauncher_Avalonia.ViewModels;
+using HLA_NoVRLauncher_Avalonia.Views;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{
+	public partial class MainWindow : Window
+	{
+		public MainWindow()
+		{
+			InitializeComponent();
+
+			DataContextChanged += (_, _) =>
+			{
+				if (DataContext is MainWindowViewModel vm)
+				{
+					vm.PropertyChanged += OnViewModelPropertyChanged;
+					if (vm.CurrentPage is HomeViewModel homeVm)
+						WireHomeViewModel(homeVm);
+				}
+			};
+		}
+
+		private void WireHomeViewModel(HomeViewModel homeVm)
+		{
+			homeVm.RequestCloseLauncher += OnRequestCloseLauncher;
+			homeVm.RequestShowLauncher  += OnRequestShowLauncher;
+			homeVm.RequestSetup         += OnRequestSetup;
+
+			// Give the ViewModel a factory that creates the overlay window.
+			// Kept here so the View layer owns window construction and
+			// HomeViewModel never needs to reference GameMenuWindow directly.
+			homeVm.OverlayWindowFactory = () => new GameMenuWindow();
+		}
+
+		private void OnViewModelPropertyChanged(object? sender,
+			System.ComponentModel.PropertyChangedEventArgs e)
+		{
+			if (e.PropertyName == nameof(MainWindowViewModel.CurrentPage))
+			{
+				if (DataContext is MainWindowViewModel vm &&
+					vm.CurrentPage is HomeViewModel homeVm)
+				{
+					WireHomeViewModel(homeVm);
+				}
+			}
+		}
+
+		private void OnRequestCloseLauncher()
+		{
+			WindowState = WindowState.Minimized;
+		}
+
+		private void OnRequestShowLauncher()
+		{
+			WindowState = WindowState.Normal;
+			Activate(); // bring to front
+		}
+
+		private void OnRequestSetup()
+		{
+			if (DataContext is MainWindowViewModel vm)
+				vm.RunSetupCommand.Execute(null);
+		}
+	}
+}
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\PiracyView.axaml ---
+----------------------------------------
+<UserControl 
+	xmlns="https://github.com/avaloniaui"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	x:Class="HLA_NoVRLauncher_Avalonia.Views.PiracyView"
+	Background="Black">
+<Panel>
+		<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
+				<!-- Bold warning text -->
+				<TextBlock Text="Copy not owned!"
+							FontSize="28"
+							FontWeight="Bold"
+							Foreground="White"
+							HorizontalAlignment="Center"/>
+
+				<!-- Buttons -->
+				<Button x:Name="OpenSteamButton"
+						Content="Open on Steam"
+						Width="200"
+						HorizontalAlignment="Center"/>
+
+				<Button x:Name="RerunCheckButton"
+						Content="Rerun Ownership Check"
+						Width="200"
+						HorizontalAlignment="Center"/>
+			</StackPanel>
+</Panel>
+</UserControl>
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\PiracyView.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{		public partial class PiracyPage : UserControl
+		{
+			public PiracyPage()
+			{
+				InitializeComponent();
+
+				// Open Steam store page
+				OpenSteamButton.Click += (_, _) =>
+				{
+					try
+					{
+						string steamUrl = "steam://store/546560";
+						string webUrl = "https://store.steampowered.com/app/546560/";
+
+						try
+						{
+							Process.Start(new ProcessStartInfo
+							{
+								FileName = steamUrl,
+								UseShellExecute = true
+							});
+						}
+						catch
+						{
+							Process.Start(new ProcessStartInfo
+							{
+								FileName = webUrl,
+								UseShellExecute = true
+							});
+						}
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine("Failed to open Steam page: " + ex.Message);
+					}
+				};
+
+				// Rerun ownership check
+				RerunCheckButton.Click += (_, _) =>
+				{
+					// Remove marker before re-check
+					OwnershipChecker.RemoveNoVRMarker();
+
+					bool ownsGame = OwnershipChecker.CheckAlyxOwnershipAndMark();
+
+					if (ownsGame)
+					{
+						// Replace this page with your normal app page
+						if (this.VisualRoot is Window window)
+						{
+							window.Content = new HomeView(); // Replace with your main page
+						}
+					}
+					else
+					{
+						Console.WriteLine("Still not owned.");
+					}
+				};
+			}
+		}
+	}
+
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\SettingsView.axaml ---
+----------------------------------------
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+             x:Class="HLA_NoVRLauncher_Avalonia.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <ScrollViewer Margin="30">
+        <StackPanel Spacing="25">
+            <TextBlock Text="SETTINGS" Classes="section-title"/>
+
+            <!-- Mod Branch -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Installed Mod Branch" FontWeight="Bold"/>
+                    <TextBlock Text="Detected automatically from your installed mod."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <Border Background="{StaticResource Brush.SurfaceAlt}"
+                            CornerRadius="4"
+                            Padding="12,8">
+                        <TextBlock Text="{Binding DetectedBranch}"
+                                   FontFamily="Consolas, Monospace"
+                                   FontSize="13"/>
+                    </Border>
+                    <Separator/>
+                </StackPanel>
+            </Border>
+
+            <!-- Game Path -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Game Path" FontWeight="Bold"/>
+                    <TextBlock Text="Override the auto-detected Half-Life: Alyx installation path."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <Grid ColumnDefinitions="*, Auto">
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding GamePath}"
+                                 Watermark="Auto-detected from Steam..."
+                                 Margin="0,0,8,0"/>
+                        <Button Grid.Column="1"
+                                Content="Browse"
+                                Command="{Binding BrowseGamePathCommand}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Audio -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Audio" FontWeight="Bold"/>
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="12"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Mute Background Video"
+                                   VerticalAlignment="Center"/>
+                        <ToggleSwitch IsChecked="{Binding Settings.IsMuted}"
+                                      OnContent="Muted"
+                                      OffContent="Unmuted"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Launcher Behaviour -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Launcher Behaviour" FontWeight="Bold"/>
+                    <CheckBox Content="Minimize launcher when game starts"
+                              IsChecked="{Binding Settings.CloseLauncherOnStart}"/>
+                </StackPanel>
+            </Border>
+
+<!-- Launch Options -->
+<Border Classes="card" Padding="20">
+    <StackPanel Spacing="15">
+        <TextBlock Text="Launch Options" FontWeight="Bold"/>
+
+        <!-- Window mode -->
+        <TextBlock Text="Window Mode"
+                   FontSize="12"
+                   Foreground="{StaticResource Brush.TextSecondary}"/>
+        <StackPanel Spacing="8">
+            <CheckBox Content="Windowed (-window)"
+                      IsChecked="{Binding Settings.Windowed}"/>
+            <CheckBox Content="Fullscreen (custom resolution)"
+                      IsChecked="{Binding Settings.Fullscreen}"/>
+
+            <!-- Resolution picker â€” only visible when fullscreen is checked -->
+            <StackPanel IsVisible="{Binding Settings.Fullscreen}"
+                        Orientation="Horizontal"
+                        Spacing="10"
+                        Margin="24,0,0,0">
+                <ComboBox ItemsSource="{Binding CommonResolutions}"
+                          SelectedItem="{Binding SelectedResolution}"
+                          Width="150"/>
+                <!-- Custom width/height inputs -->
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6"
+                            IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBox Text="{Binding Settings.FullscreenWidth}"
+                             Width="70"
+                             Watermark="Width"
+                             IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static ObjectConverters.Equal},
+                                ConverterParameter=Custom}"/>
+                    <TextBlock Text="x"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static ObjectConverters.Equal},
+                                ConverterParameter=Custom}"/>
+                    <TextBox Text="{Binding Settings.FullscreenHeight}"
+                             Width="70"
+                             Watermark="Height"
+                             IsVisible="{Binding SelectedResolution,
+                                Converter={x:Static ObjectConverters.Equal},
+                                ConverterParameter=Custom}"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+
+        <Separator/>
+
+        <!-- Other options -->
+        <TextBlock Text="Other"
+                   FontSize="12"
+                   Foreground="{StaticResource Brush.TextSecondary}"/>
+        <StackPanel Spacing="8">
+            <CheckBox Content="Default Menu (-defaultmenu)"
+                      IsChecked="{Binding Settings.DefaultMenu}"/>
+            <CheckBox Content="Enable VSync (-vsync)"
+                      IsChecked="{Binding Settings.VSync}"/>
+            <CheckBox Content="Enable Console (-console -vconsole)"
+                      IsChecked="{Binding Settings.EnableConsole}"/>
+        </StackPanel>
+
+        <Separator/>
+
+        <!-- Advanced / custom args -->
+        <TextBlock Text="Advanced â€” Custom Arguments"
+                   FontSize="12"
+                   Foreground="{StaticResource Brush.TextSecondary}"/>
+        <TextBox Text="{Binding Settings.CustomLaunchArgs}"
+                 Watermark="Additional args appended at the end..."
+                 Height="40"
+                 FontSize="12"/>
+            </StackPanel>
+        </Border>
+            <!-- Backup Location -->
+        <Border Classes="card" Padding="20">
+            <StackPanel Spacing="15">
+                <TextBlock Text="Backup Location" FontWeight="Bold"/>
+                <TextBlock Text="Where to store backups of original game files (skill_manifest.cfg and gameinfo.gi) before installing the mod."
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap"
+                           FontSize="12"/>
+                <ComboBox HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding BackupLocations}"
+                          SelectedItem="{Binding Settings.BackupLocation}"/>
+                <TextBlock FontSize="11"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap">
+                    <Run Text="Launcher"/>
+                    <Run Text=" â€” next to the launcher exe (recommended)"/>
+                </TextBlock>
+                <TextBlock FontSize="11"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap">
+                    <Run Text="Game Folder"/>
+                    <Run Text=" â€” inside the Half-Life: Alyx folder"/>
+                </TextBlock>
+                <TextBlock FontSize="11"
+                           Foreground="{StaticResource Brush.TextSecondary}"
+                           TextWrapping="Wrap">
+                    <Run Text="AppData"/>
+                    <Run Text=" â€” %AppData%\HLA_NoVRLauncher\backup"/>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+            <!-- Uninstall -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Uninstall Mod" FontWeight="Bold"/>
+                    <TextBlock Text="This will restore the backed up files from the installation. You will need to reinstall it afterwards."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <Button Content="Uninstall Mod"
+                            Command="{Binding UninstallModCommand}"
+                            HorizontalAlignment="Left"
+                            Foreground="White"
+                            Background="#8B0000"/>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\SettingsView.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{
+	public partial class SettingsView : UserControl
+	{
+		public SettingsView()
+		{
+			InitializeComponent();
+		}
+	}
+}
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\SetupView.axaml ---
+----------------------------------------
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+    x:Class="HLA_NoVRLauncher_Avalonia.Views.SetupView"
+    x:DataType="vm:SetupViewModel">
+
+    <Grid RowDefinitions="Auto, *, Auto"
+          MaxWidth="500"
+          VerticalAlignment="Center"
+          HorizontalAlignment="Center"
+          Margin="40">
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="8" Margin="0,0,0,30">
+            <Image Source="avares://HLA_NoVRLauncher_Avalonia/Assets/logo.png"
+                   Width="250"
+                   HorizontalAlignment="Center"/>
+            <TextBlock Text="Welcome to the HLA NoVR Launcher"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource Brush.Accent}"
+                       HorizontalAlignment="Center"/>
+            <TextBlock Text="Let's get you set up."
+                       FontSize="13"
+                       Foreground="{StaticResource Brush.TextSecondary}"
+                       HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Game Path -->
+        <StackPanel Grid.Row="1" Spacing="16">
+
+            <TextBlock Text="Game Location"
+                       FontSize="16"
+                       FontWeight="Bold"/>
+
+            <TextBlock Text="Select your Half-Life: Alyx installation folder. This is the folder that contains the 'game' and 'content' subfolders."
+                       Foreground="{StaticResource Brush.TextSecondary}"
+                       TextWrapping="Wrap"/>
+
+            <Grid ColumnDefinitions="*, Auto">
+                <TextBox Grid.Column="0"
+                         Text="{Binding GamePath}"
+                         Watermark="Path to Half-Life: Alyx folder..."
+                         Margin="0,0,8,0"/>
+                <Button Grid.Column="1"
+                        Content="Browse"
+                        Command="{Binding BrowseCommand}"/>
+            </Grid>
+
+            <TextBlock Text="{Binding GamePathMessage}"
+                       FontSize="12"
+                       Foreground="{Binding GamePathMessageColor}"
+                       IsVisible="{Binding GamePathMessage,
+                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+            <TextBlock Text="Once set up, click Install Mod on the home screen and select your downloaded zip file from GitHub."
+                       Foreground="{StaticResource Brush.TextSecondary}"
+                       TextWrapping="Wrap"
+                       FontSize="12"/>
+
+        </StackPanel>
+
+        <!-- Finish button -->
+        <Button Grid.Row="2"
+                Classes="accent"
+                Command="{Binding FinishCommand}"
+                IsEnabled="{Binding GamePathValid}"
+                HorizontalAlignment="Right"
+                Margin="0,30,0,0"
+                Content="Get Started â†’"/>
+
+    </Grid>
+
+</UserControl>
+
+
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Views\SetupView.axaml.cs ---
+----------------------------------------
+using Avalonia.Controls;
+
+namespace HLA_NoVRLauncher_Avalonia.Views
+{
+	public partial class SetupView : UserControl
+	{
+		public SetupView()
+		{
+			InitializeComponent();
+		}
+	}
+}
+
+
+
+========================================
+FOLDER: Converters
+========================================
+
+--- FILE: E:\GitHub\HLA-NoVR-Launcher\HLA_NoVRLauncher_Avalonia\Converters\BoolToClassConverter.cs ---
+----------------------------------------
+using Avalonia.Data.Converters;
+using System;
+using System.Globalization;
+
+namespace HLA_NoVRLauncher_Avalonia.Converters
+{
+    public class BoolToClassConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return (bool)value ? "open" : "";
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+}
+
+

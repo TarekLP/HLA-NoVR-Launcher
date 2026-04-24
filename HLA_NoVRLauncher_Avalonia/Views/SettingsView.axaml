@@ -71,113 +71,136 @@
                 </StackPanel>
             </Border>
 
-<!-- Launch Options -->
-<Border Classes="card" Padding="20">
-    <StackPanel Spacing="15">
-        <TextBlock Text="Launch Options" FontWeight="Bold"/>
+            <!-- Launch Options -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Launch Options" FontWeight="Bold"/>
 
-        <!-- Window mode -->
-        <TextBlock Text="Window Mode"
-                   FontSize="12"
-                   Foreground="{StaticResource Brush.TextSecondary}"/>
-        <StackPanel Spacing="8">
-            <CheckBox Content="Windowed (-window)"
-                      IsChecked="{Binding Settings.Windowed}"/>
-            <CheckBox Content="Fullscreen (custom resolution)"
-                      IsChecked="{Binding Settings.Fullscreen}"/>
+                    <!-- Launch Preset -->
+                    <TextBlock Text="Launch Preset"
+                               FontSize="12"
+                               Foreground="{StaticResource Brush.TextSecondary}"/>
+                    <ComboBox HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding LaunchPresets}"
+                              SelectedItem="{Binding Settings.LaunchPreset}"/>
 
-            <!-- Resolution picker — only visible when fullscreen is checked -->
-            <StackPanel IsVisible="{Binding Settings.Fullscreen}"
-                        Orientation="Horizontal"
-                        Spacing="10"
-                        Margin="24,0,0,0">
-                <ComboBox ItemsSource="{Binding CommonResolutions}"
-                          SelectedItem="{Binding SelectedResolution}"
-                          Width="150"/>
-                <!-- Custom width/height inputs -->
-                <StackPanel Orientation="Horizontal"
-                            Spacing="6"
-                            IsVisible="{Binding SelectedResolution,
-                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <TextBox Text="{Binding Settings.FullscreenWidth}"
-                             Width="70"
-                             Watermark="Width"
-                             IsVisible="{Binding SelectedResolution,
-                                Converter={x:Static ObjectConverters.Equal},
-                                ConverterParameter=Custom}"/>
-                    <TextBlock Text="x"
-                               VerticalAlignment="Center"
-                               IsVisible="{Binding SelectedResolution,
-                                Converter={x:Static ObjectConverters.Equal},
-                                ConverterParameter=Custom}"/>
-                    <TextBox Text="{Binding Settings.FullscreenHeight}"
-                             Width="70"
-                             Watermark="Height"
-                             IsVisible="{Binding SelectedResolution,
-                                Converter={x:Static ObjectConverters.Equal},
-                                ConverterParameter=Custom}"/>
+                    <!-- Preset description -->
+                    <Border Background="{StaticResource Brush.SurfaceAlt}"
+                            CornerRadius="4"
+                            Padding="12,8">
+                        <Panel>
+                            <!-- Standard description -->
+                            <TextBlock FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource Brush.TextSecondary}"
+                                       IsVisible="{Binding Settings.LaunchPreset,
+                                           Converter={x:Static ObjectConverters.Equal},
+                                           ConverterParameter=Standard}">
+                                Launches with your configured options only. Recommended for normal play.
+                            </TextBlock>
+                            <!-- Debug description -->
+                            <TextBlock FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource Brush.TextSecondary}"
+                                       IsVisible="{Binding Settings.LaunchPreset,
+                                           Converter={x:Static ObjectConverters.Equal},
+                                           ConverterParameter=Debug}">
+                                Adds -condebug -console -vconsole on top of your configured options.
+                                Use this when reporting bugs or reading the crash log.
+                            </TextBlock>
+                        </Panel>
+                    </Border>
+
+                    <Separator/>
+
+                    <!-- Window mode -->
+                    <TextBlock Text="Window Mode"
+                               FontSize="12"
+                               Foreground="{StaticResource Brush.TextSecondary}"/>
+                    <StackPanel Spacing="8">
+                        <CheckBox Content="Windowed (-window)"
+                                  IsChecked="{Binding Settings.Windowed}"/>
+                        <CheckBox Content="Fullscreen (custom resolution)"
+                                  IsChecked="{Binding Settings.Fullscreen}"/>
+
+                        <!-- Resolution picker — only visible when fullscreen is checked -->
+                        <StackPanel IsVisible="{Binding Settings.Fullscreen}"
+                                    Orientation="Horizontal"
+                                    Spacing="10"
+                                    Margin="24,0,0,0">
+                            <ComboBox ItemsSource="{Binding CommonResolutions}"
+                                      SelectedItem="{Binding SelectedResolution}"
+                                      Width="150"/>
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="6"
+                                        IsVisible="{Binding SelectedResolution,
+                                            Converter={x:Static ObjectConverters.Equal},
+                                            ConverterParameter=Custom}">
+                                <TextBox Text="{Binding Settings.FullscreenWidth}"
+                                         Width="70"
+                                         Watermark="Width"/>
+                                <TextBlock Text="x" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding Settings.FullscreenHeight}"
+                                         Width="70"
+                                         Watermark="Height"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- Other options -->
+                    <TextBlock Text="Other"
+                               FontSize="12"
+                               Foreground="{StaticResource Brush.TextSecondary}"/>
+                    <StackPanel Spacing="8">
+                        <CheckBox Content="Default Menu (-defaultmenu)"
+                                  IsChecked="{Binding Settings.DefaultMenu}"/>
+                        <CheckBox Content="Enable VSync (-vsync)"
+                                  IsChecked="{Binding Settings.VSync}"/>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- Custom args -->
+                    <TextBlock Text="Advanced — Custom Arguments"
+                               FontSize="12"
+                               Foreground="{StaticResource Brush.TextSecondary}"/>
+                    <TextBox Text="{Binding Settings.CustomLaunchArgs}"
+                             Watermark="Additional args appended at the end..."
+                             Height="40"
+                             FontSize="12"/>
                 </StackPanel>
-            </StackPanel>
-        </StackPanel>
+            </Border>
 
-        <Separator/>
-
-        <!-- Other options -->
-        <TextBlock Text="Other"
-                   FontSize="12"
-                   Foreground="{StaticResource Brush.TextSecondary}"/>
-        <StackPanel Spacing="8">
-            <CheckBox Content="Default Menu (-defaultmenu)"
-                      IsChecked="{Binding Settings.DefaultMenu}"/>
-            <CheckBox Content="Enable VSync (-vsync)"
-                      IsChecked="{Binding Settings.VSync}"/>
-            <CheckBox Content="Enable Console (-console -vconsole)"
-                      IsChecked="{Binding Settings.EnableConsole}"/>
-        </StackPanel>
-
-        <Separator/>
-
-        <!-- Advanced / custom args -->
-        <TextBlock Text="Advanced — Custom Arguments"
-                   FontSize="12"
-                   Foreground="{StaticResource Brush.TextSecondary}"/>
-        <TextBox Text="{Binding Settings.CustomLaunchArgs}"
-                 Watermark="Additional args appended at the end..."
-                 Height="40"
-                 FontSize="12"/>
-            </StackPanel>
-        </Border>
             <!-- Backup Location -->
-        <Border Classes="card" Padding="20">
-            <StackPanel Spacing="15">
-                <TextBlock Text="Backup Location" FontWeight="Bold"/>
-                <TextBlock Text="Where to store backups of original game files (skill_manifest.cfg and gameinfo.gi) before installing the mod."
-                           Foreground="{StaticResource Brush.TextSecondary}"
-                           TextWrapping="Wrap"
-                           FontSize="12"/>
-                <ComboBox HorizontalAlignment="Stretch"
-                          ItemsSource="{Binding BackupLocations}"
-                          SelectedItem="{Binding Settings.BackupLocation}"/>
-                <TextBlock FontSize="11"
-                           Foreground="{StaticResource Brush.TextSecondary}"
-                           TextWrapping="Wrap">
-                    <Run Text="Launcher"/>
-                    <Run Text=" — next to the launcher exe (recommended)"/>
-                </TextBlock>
-                <TextBlock FontSize="11"
-                           Foreground="{StaticResource Brush.TextSecondary}"
-                           TextWrapping="Wrap">
-                    <Run Text="Game Folder"/>
-                    <Run Text=" — inside the Half-Life: Alyx folder"/>
-                </TextBlock>
-                <TextBlock FontSize="11"
-                           Foreground="{StaticResource Brush.TextSecondary}"
-                           TextWrapping="Wrap">
-                    <Run Text="AppData"/>
-                    <Run Text=" — %AppData%\HLA_NoVRLauncher\backup"/>
-                </TextBlock>
-            </StackPanel>
-        </Border>
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Backup Location" FontWeight="Bold"/>
+                    <TextBlock Text="Where to store backups of original game files (skill_manifest.cfg and gameinfo.gi) before installing the mod."
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               FontSize="12"/>
+                    <ComboBox HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding BackupLocations}"
+                              SelectedItem="{Binding Settings.BackupLocation}"/>
+                    <TextBlock FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap">
+                        <Run Text="Launcher"/> <Run Text=" — next to the launcher exe (recommended)"/>
+                    </TextBlock>
+                    <TextBlock FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap">
+                        <Run Text="Game Folder"/> <Run Text=" — inside the Half-Life: Alyx folder"/>
+                    </TextBlock>
+                    <TextBlock FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap">
+                        <Run Text="AppData"/> <Run Text=" — %AppData%\HLA_NoVRLauncher\backup"/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
 
             <!-- Uninstall -->
             <Border Classes="card" Padding="20">

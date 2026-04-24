@@ -134,9 +134,12 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			_cts      = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
 			// 1. Wait for game window (blocks until hlvr.exe appears or timeout)
+			Console.WriteLine("[Overlay] Waiting for hlvr.exe...");
 			_gameHwnd = await _helper.WaitForGameWindowAsync(
 				"hlvr.exe",
 				cancellationToken: _cts.Token);
+
+			Console.WriteLine($"[Overlay] Game window found: 0x{_gameHwnd:X}");
 
 			// 2. Create the overlay window on the UI thread, position it immediately
 			await Dispatcher.UIThread.InvokeAsync(() =>
@@ -144,7 +147,18 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				_window = windowFactory();
 				_window.Show();
 				SyncGeometry();
+
+				// Get the native Win32 handle and force topmost.
+				// Avalonia's Topmost="True" alone isn't enough to beat a game window —
+				// we need to call SetWindowPos(HWND_TOPMOST) directly.
+				IntPtr overlayHwnd = _window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+				Console.WriteLine($"[Overlay] Overlay hwnd: 0x{overlayHwnd:X}");
+
+				if (overlayHwnd != IntPtr.Zero)
+					_helper.SetTopmost(overlayHwnd);
 			});
+
+			Console.WriteLine("[Overlay] Window shown and forced topmost.");
 
 			// 3. Start background loops
 			_geometryTask = RunGeometryLoopAsync(_cts.Token);
@@ -171,12 +185,16 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			_helper.ExecuteCommand("exec", "HLA-NoVR-Launcher-Helper.exe");
 		}
 
-
+		// -----------------------------------------------------------------------
+		// Visibility helpers
+		// -----------------------------------------------------------------------
 
 		public void Show() => Dispatcher.UIThread.Post(() => _window?.Show());
 		public void Hide() => Dispatcher.UIThread.Post(() => _window?.Hide());
 
-
+		// -----------------------------------------------------------------------
+		// Dispose
+		// -----------------------------------------------------------------------
 
 		public void Dispose()
 		{
@@ -190,6 +208,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			Dispatcher.UIThread.Post(() => _window?.Close());
 		}
 
+		// -----------------------------------------------------------------------
+		// State machine
+		// -----------------------------------------------------------------------
 
 		/// <summary>
 		/// Transitions to a new state and shows/hides the window accordingly.

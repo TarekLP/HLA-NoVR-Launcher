@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HLA_NoVRLauncher_Avalonia.ViewModels"
+             x:Class="HLA_NoVRLauncher_Avalonia.Views.PiracyView"
+             x:DataType="vm:PiracyViewModel"
+             Background="{StaticResource Brush.Background}">
+
+    <Grid RowDefinitions="*, Auto">
+
+        <!-- Centre content -->
+        <StackPanel Grid.Row="0"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="24"
+                    MaxWidth="420">
+
+            <!-- Logo -->
+            <Image Source="avares://HLA_NoVRLauncher_Avalonia/Assets/logo.png"
+                   Width="260"
+                   HorizontalAlignment="Center"/>
+
+            <Separator/>
+
+            <!-- Heading — changes based on reason -->
+            <TextBlock Text="{Binding Heading}"
+                       FontSize="22"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource Brush.Accent}"
+                       HorizontalAlignment="Center"/>
+
+            <!-- Body — changes based on reason -->
+            <TextBlock Text="{Binding Body}"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       FontSize="13"
+                       Foreground="{StaticResource Brush.TextSecondary}"
+                       LineHeight="20"/>
+
+            <!-- Buttons -->
+            <StackPanel Spacing="10" HorizontalAlignment="Center">
+
+                <!-- Only shown when the game isn't owned -->
+                <Button x:Name="OpenSteamButton"
+                        Content="View on Steam Store"
+                        Classes="accent"
+                        Width="220"
+                        Height="38"
+                        HorizontalContentAlignment="Center"
+                        IsVisible="{Binding ShowStoreButton}"/>
+
+                <Button x:Name="RerunCheckButton"
+                        Content="Re-check Ownership"
+                        Width="220"
+                        Height="38"
+                        HorizontalContentAlignment="Center"/>
+
+            </StackPanel>
+
+        </StackPanel>
+
+        <!-- Footer -->
+        <TextBlock Grid.Row="1"
+                   Text="Make sure Steam is running before clicking Re-check."
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   FontSize="11"
+                   Foreground="{StaticResource Brush.TextSecondary}"
+                   Margin="40,0,40,20"/>
+
+    </Grid>
+
+</UserControl>

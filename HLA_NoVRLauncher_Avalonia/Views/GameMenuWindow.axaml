@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HLA_NoVRLauncher_Avalonia.Views.GameMenuWindow"
+        Title="Game Menu"
+        SystemDecorations="None"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        Width="960"
+        Height="600">
+
+    <!--
+        Step 4 — Positioning proof-of-concept.
+
+        This window intentionally contains nothing but a small labelled box.
+        When you launch the game and see this box sitting over the game window,
+        geometry sync is confirmed to be working. Replace this content with the
+        real menu panels in steps 7+.
+    -->
+    <Grid Background="Transparent">
+
+        <!-- Coloured indicator box — centred in the overlay -->
+        <Border HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                BorderBrush="#CF9F13"
+                BorderThickness="2"
+                CornerRadius="4"
+                Background="#CC000000"
+                Padding="24 16">
+
+            <StackPanel Spacing="6">
+
+                <TextBlock Text="Game Menu Overlay"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           Foreground="#CF9F13"
+                           HorizontalAlignment="Center" />
+
+                <TextBlock Text="Step 4 — Geometry sync test"
+                           FontSize="13"
+                           Foreground="White"
+                           HorizontalAlignment="Center" />
+
+                <TextBlock Text="Seeing this over the game window means positioning works."
+                           FontSize="11"
+                           Foreground="#AAAAAA"
+                           HorizontalAlignment="Center" />
+
+            </StackPanel>
+
+        </Border>
+
+    </Grid>
+
+</Window>

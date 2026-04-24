@@ -27,7 +27,7 @@
                             HorizontalContentAlignment="Left"
                             Background="Transparent"
                             Padding="12,10">
-                        <TextBlock Text="☰"
+                        <TextBlock Text="&#9776;"
                                    FontSize="18"
                                    Foreground="{StaticResource Brush.TextSecondary}"/>
                     </Button>
@@ -64,7 +64,7 @@
                             Padding="10,8"
                             ToolTip.Tip="Home">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="🏠" FontSize="16"/>
+                            <TextBlock Text="&#127968;" FontSize="16"/>
                             <TextBlock Text="Home"
                                        IsVisible="{Binding IsSidebarOpen}"
                                        VerticalAlignment="Center"/>
@@ -77,7 +77,7 @@
                             Padding="10,8"
                             ToolTip.Tip="Settings">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="⚙" FontSize="16"/>
+                            <TextBlock Text="&#9881;" FontSize="16"/>
                             <TextBlock Text="Settings"
                                        IsVisible="{Binding IsSidebarOpen}"
                                        VerticalAlignment="Center"/>
@@ -90,7 +90,7 @@
                             Padding="10,8"
                             ToolTip.Tip="Crash Log">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="📋" FontSize="16"/>
+                            <TextBlock Text="&#128203;" FontSize="16"/>
                             <TextBlock Text="Crash Log"
                                        IsVisible="{Binding IsSidebarOpen}"
                                        VerticalAlignment="Center"/>
@@ -105,6 +105,9 @@
         <ContentControl Grid.Column="1"
                         Content="{Binding CurrentPage}">
             <ContentControl.DataTemplates>
+                <DataTemplate DataType="{x:Type vm:PiracyViewModel}">
+                    <views:PiracyView />
+                </DataTemplate>
                 <DataTemplate DataType="{x:Type vm:HomeViewModel}">
                     <views:HomeView />
                 </DataTemplate>

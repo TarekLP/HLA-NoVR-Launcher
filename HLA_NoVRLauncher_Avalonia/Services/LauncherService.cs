@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,7 +66,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			{
 				using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
 				return key?.GetValue("SteamPath")?.ToString()
-						   ?.Replace('/', Path.DirectorySeparatorChar);
+							   ?.Replace('/', Path.DirectorySeparatorChar);
 			}
 
 			string[] linuxPaths =
@@ -132,41 +133,46 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 	/// <summary>
 	/// Handles game launch with configurable settings and process monitoring.
+	/// 
+	/// Launch presets:
+	///   "Standard" — applies only the options the user configured manually.
+	///   "Debug"    — Standard + -condebug -console -vconsole for full logging.
 	/// </summary>
 	public class LaunchService
 	{
-		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
 		private const string AppId = "546560";
+
+		// Core args that are always present regardless of preset
+		private const string BaseArgs =
+			"-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 " +
+			"+vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
 
 		public void LaunchGame(string extraArgs, Action onExited, LauncherSettings settings)
 		{
-#if DEBUG
-			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0 -condebug";
-#else
-			const string baseArgs = "-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 +vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
-#endif
+			var args = new StringBuilder(BaseArgs);
 
-			var managedArgs = new System.Text.StringBuilder();
-
+			// --- User-configured options (applied for all presets) ---
 			if (settings.Windowed)
-				managedArgs.Append(" -window");
+				args.Append(" -window");
 
 			if (settings.Fullscreen)
-				managedArgs.Append($" -w {settings.FullscreenWidth} -h {settings.FullscreenHeight}");
+				args.Append($" -w {settings.FullscreenWidth} -h {settings.FullscreenHeight}");
 
 			if (settings.DefaultMenu)
-				managedArgs.Append(" -defaultmenu");
+				args.Append(" -defaultmenu");
 
 			if (settings.VSync)
-				managedArgs.Append(" -vsync");
+				args.Append(" -vsync");
 
-			if (settings.EnableConsole)
-				managedArgs.Append(" -console -vconsole");
+			// --- Preset-specific options ---
+			if (settings.LaunchPreset == "Debug")
+				args.Append(" -condebug -console -vconsole");
 
-			string allArgs = $"{baseArgs}{managedArgs}" +
-							 (string.IsNullOrWhiteSpace(extraArgs) ? "" : $" {extraArgs.Trim()}");
+			// --- User's custom args (always appended last) ---
+			if (!string.IsNullOrWhiteSpace(extraArgs))
+				args.Append($" {extraArgs.Trim()}");
 
-			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(allArgs)}";
+			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(args.ToString())}";
 
 			Process.Start(new ProcessStartInfo
 			{
@@ -174,26 +180,29 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				UseShellExecute = true
 			});
 
-			System.Threading.Tasks.Task.Run(async () =>
+			Task.Run(async () =>
 			{
-				await System.Threading.Tasks.Task.Delay(5000);
+				// Wait up to 60 seconds for hlvr.exe to appear.
+				// If the user cancels the Steam dialog it never starts — reset status.
+				var deadline = DateTime.UtcNow.AddSeconds(60);
 
-				while (true)
+				while (DateTime.UtcNow < deadline)
 				{
 					var procs = Process.GetProcessesByName("hlvr");
 					if (procs.Length > 0)
 					{
 						await procs[0].WaitForExitAsync();
-						break;
+						onExited?.Invoke();
+						return;
 					}
-					await System.Threading.Tasks.Task.Delay(2000);
+					await Task.Delay(2000);
 				}
 
+				// Timed out — user cancelled the Steam dialog
 				onExited?.Invoke();
 			});
 		}
 	}
-
 	/// <summary>
 	/// Provides cross-platform window management and helper process execution.
 	/// Supports Windows (Win32 API) and Linux (X11).
@@ -382,6 +391,27 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			public static bool IsEscapePressed()
 			{
 				return (GetKeyState(VK_ESCAPE) & 0x8000) != 0;
+			}
+
+			// SetWindowPos — used to force the overlay on top of the game window
+			[DllImport("user32.dll", SetLastError = true)]
+			private static extern bool SetWindowPos(
+				IntPtr hWnd, IntPtr hWndInsertAfter,
+				int x, int y, int cx, int cy,
+				uint uFlags);
+
+			private static readonly IntPtr HWND_TOPMOST   = new IntPtr(-1);
+			private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+
+			private const uint SWP_NOMOVE    = 0x0002;
+			private const uint SWP_NOSIZE    = 0x0001;
+			private const uint SWP_SHOWWINDOW = 0x0040;
+
+			public static void ForceTopmost(IntPtr hwnd)
+			{
+				if (hwnd == IntPtr.Zero) return;
+				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 			}
 		}
 
@@ -578,6 +608,16 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		public (int x, int y, int width, int height) GetWindowGeometry(IntPtr hwnd)
 		{
 			return WindowHelper.GetWindowGeometry(hwnd);
+		}
+
+		/// <summary>
+		/// Forces a window to be always-on-top using Win32 SetWindowPos.
+		/// More reliable than Avalonia's Topmost property when competing with
+		/// a fullscreen or topmost game window.
+		/// </summary>
+		public void SetTopmost(IntPtr hwnd)
+		{
+			WindowHelper.ForceTopmost(hwnd);
 		}
 	}
 }

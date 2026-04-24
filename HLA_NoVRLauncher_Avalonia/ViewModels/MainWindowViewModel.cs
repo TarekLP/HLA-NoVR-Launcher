@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HLA_NoVRLauncher_Avalonia.Models;
 using HLA_NoVRLauncher_Avalonia.Services;
@@ -7,56 +7,113 @@ using System.Reflection;
 
 namespace HLA_NoVRLauncher_Avalonia.ViewModels
 {
-	public partial class MainWindowViewModel : ViewModelBase
-	{
-		private readonly SettingsService _settingsService = new();
+    public partial class MainWindowViewModel : ViewModelBase
+    {
+        private readonly SettingsService _settingsService = new();
 
-		[ObservableProperty]
-		private bool _isSidebarOpen = true;
+        [ObservableProperty] private bool _isSidebarOpen = true;
+        [ObservableProperty] private object _currentPage;
+        [ObservableProperty] private LauncherSettings _settings;
 
-		[ObservableProperty]
-		private object _currentPage;
+        public static string LauncherVersion =>
+            "v" + (Assembly.GetExecutingAssembly()
+                           .GetName().Version?.ToString(3) ?? "1.0.0");
 
-		[ObservableProperty]
-		private LauncherSettings _settings;
+        public double SidebarWidth => IsSidebarOpen ? 220 : 60;
 
-		public static string LauncherVersion =>
-			"v" + (Assembly.GetExecutingAssembly()
-						   .GetName().Version?.ToString(3) ?? "1.0.0");
+        public MainWindowViewModel()
+        {
+            _settings = _settingsService.LoadSettings();
 
-		public double SidebarWidth => IsSidebarOpen ? 220 : 60;
+            var ownership = OwnershipChecker.Check();
 
-		public MainWindowViewModel()
+            switch (ownership)
+            {
+                case OwnershipResult.Owned:
+                case OwnershipResult.Inconclusive:
+                    // Allowed — continue to normal launcher
+                    break;
+
+                case OwnershipResult.NotOwned:
+                    // Confirmed pirate — write permanent marker and block
+                    OwnershipChecker.WriteMarker();
+                    _currentPage = new PiracyViewModel(ownership);
+                    return;
+
+                case OwnershipResult.SteamNotRunning:
+                    // Can't verify — block until Steam is started, but no marker
+                    _currentPage = new PiracyViewModel(ownership);
+                    return;
+            }
+
+            // Normal startup
+            if (_settings.FirstRun)
+            {
+                var setup = new SetupViewModel();
+                setup.SetupComplete += () =>
+                {
+                    _settings = _settingsService.LoadSettings();
+                    CurrentPage = new HomeViewModel();
+                };
+                _currentPage = setup;
+            }
+            else
+            {
+                _currentPage = new HomeViewModel();
+            }
+        }
+
+        partial void OnIsSidebarOpenChanged(bool value) =>
+            OnPropertyChanged(nameof(SidebarWidth));
+
+        [RelayCommand] private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
+
+        [RelayCommand]
+        private void NavigateMain()
+        {
+            if (_settings.FirstRun)
+            {
+                var setup = new SetupViewModel();
+                setup.SetupComplete += () =>
+                {
+                    _settings = _settingsService.LoadSettings();
+                    CurrentPage = new HomeViewModel();
+                };
+                CurrentPage = setup;
+            }
+            else
+            {
+                CurrentPage = new HomeViewModel();
+            }
+        }
+
+        [RelayCommand]
+        private void RunSetup()
+        {
+            var setup = new SetupViewModel();
+            setup.SetupComplete += () =>
+            {
+                _settings = _settingsService.LoadSettings();
+                CurrentPage = new HomeViewModel();
+            };
+            CurrentPage = setup;
+        }
+
+        [RelayCommand]
+        private void NavigateSettings()
+        {
+            _settings = _settingsService.LoadSettings();
+            CurrentPage = new SettingsViewModel(_settings);
+        }
+
+        [RelayCommand]
+        private void NavigateLog() => CurrentPage = new CrashLogViewModel();
+    
+        [RelayCommand]
+	    public void NavigateToLauncher()
 		{
 			_settings = _settingsService.LoadSettings();
 
-			if (_settings.FirstRun)
-			{
-				var setup = new SetupViewModel();
-				setup.SetupComplete += () =>
-				{
-					_settings = _settingsService.LoadSettings();
-					CurrentPage = new HomeViewModel();
-				};
-				_currentPage = setup;
-			}
-			else
-			{
-				_currentPage = new HomeViewModel();
-			}
-		}
-
-		partial void OnIsSidebarOpenChanged(bool value)
-		{
-			OnPropertyChanged(nameof(SidebarWidth));
-		}
-
-		[RelayCommand]
-		private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
-
-		[RelayCommand]
-		private void NavigateMain()
-		{
 			if (_settings.FirstRun)
 			{
 				var setup = new SetupViewModel();
@@ -72,27 +129,5 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 				CurrentPage = new HomeViewModel();
 			}
 		}
-
-		[RelayCommand]
-		private void RunSetup()
-		{
-			var setup = new SetupViewModel();
-			setup.SetupComplete += () =>
-			{
-				_settings = _settingsService.LoadSettings();
-				CurrentPage = new HomeViewModel();
-			};
-			CurrentPage = setup;
-		}
-
-		[RelayCommand]
-		private void NavigateSettings()
-		{
-			_settings = _settingsService.LoadSettings();
-			CurrentPage = new SettingsViewModel(_settings);
-		}
-
-		[RelayCommand]
-		private void NavigateLog() => CurrentPage = new CrashLogViewModel();
 	}
 }
