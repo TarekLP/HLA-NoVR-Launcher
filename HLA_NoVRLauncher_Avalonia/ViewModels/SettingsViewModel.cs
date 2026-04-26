@@ -56,13 +56,14 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
             "AppData"
         };
 
-        /// <summary>
-        /// Available launch presets shown in the dropdown.
-        ///
-        /// Standard — only the options the user configured manually.
-        /// Debug    — Standard + -condebug -console -vconsole (full logging).
-        /// </summary>
-        public List<string> LaunchPresets { get; } = new()
+		public List<string> AvailableLaunchMethods { get; } = new()
+        {
+	        "Steam URI",
+	        "Direct"
+        };
+
+
+		public List<string> LaunchPresets { get; } = new()
         {
             "Standard",
             "Debug"

@@ -141,6 +141,11 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		[RelayCommand(CanExecute = nameof(CanLaunch))]
 		private async Task LaunchGameAsync()
 		{
+			Console.WriteLine("=== LaunchGameAsync entered ===");
+			Console.WriteLine($"DefaultMenu={_settingsService.LoadSettings().DefaultMenu}");
+			Console.WriteLine($"GamePath='{ResolveGamePath()}'");
+			Console.WriteLine($"OverlayFactory is null: {OverlayWindowFactory == null}");
+
 			IsBusy = true;
 			Status = LauncherStatus.GameRunning;
 
@@ -192,22 +197,23 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 					_overlayService.AchievementReceived += id =>
 						Console.WriteLine($"[Overlay] Achievement requested: {id}");
 
-					// Run on a thread-pool thread — InitializeAsync is fully async
-					// and dispatches window creation back to the UI thread itself.
 					_ = Task.Run(async () =>
 					{
 						try
 						{
-							Console.WriteLine("[Overlay] InitializeAsync starting...");
+							Console.WriteLine($"[Overlay] Starting. GamePath='{gamePath}'");
+							Console.WriteLine($"[Overlay] Factory is null: {factory == null}");
 							await _overlayService.InitializeAsync(gamePath, factory);
+							Console.WriteLine("[Overlay] InitializeAsync completed.");
 						}
 						catch (OperationCanceledException)
 						{
-							// Game exited before overlay could initialise — normal.
+							Console.WriteLine("[Overlay] Cancelled — game exited before overlay initialised.");
 						}
 						catch (Exception ex)
 						{
-							Console.WriteLine($"[Overlay] Init failed: {ex.Message}");
+							Console.WriteLine($"[Overlay] FAILED: {ex.GetType().Name}: {ex.Message}");
+							Console.WriteLine($"[Overlay] Stack: {ex.StackTrace}");
 						}
 					});
 				}

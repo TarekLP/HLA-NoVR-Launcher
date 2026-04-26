@@ -118,8 +118,6 @@
                                FontSize="12"
                                Foreground="{StaticResource Brush.TextSecondary}"/>
                     <StackPanel Spacing="8">
-                        <CheckBox Content="Windowed (-window)"
-                                  IsChecked="{Binding Settings.Windowed}"/>
                         <CheckBox Content="Fullscreen (custom resolution)"
                                   IsChecked="{Binding Settings.Fullscreen}"/>
 
@@ -147,11 +145,8 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <Separator/>
-
                     <!-- Other options -->
-                    <TextBlock Text="Other"
-                               FontSize="12"
+                    <TextBlock Text="Other" FontSize="12"
                                Foreground="{StaticResource Brush.TextSecondary}"/>
                     <StackPanel Spacing="8">
                         <CheckBox Content="Default Menu (-defaultmenu)"
@@ -199,6 +194,28 @@
                                TextWrapping="Wrap">
                         <Run Text="AppData"/> <Run Text=" — %AppData%\HLA_NoVRLauncher\backup"/>
                     </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- Launch Method -->
+            <Border Classes="card" Padding="20">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Launch Method" FontWeight="Bold"/>
+                    <ComboBox HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding AvailableLaunchMethods}"
+                              SelectedItem="{Binding Settings.LaunchMethod}"/>
+                    <TextBlock FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               Text="Steam URI — launches via Steam (may show a confirmation dialog)."/>
+                    <TextBlock FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               Text="Direct — launches hlvr.exe directly, faster with no dialog. Requires game path to be set correctly."/>
+                    <TextBlock FontSize="11"
+                               Foreground="{StaticResource Brush.TextSecondary}"
+                               TextWrapping="Wrap"
+                               Text="Note: the game always runs in borderless windowed mode so the overlay can appear on top of it."/>
                 </StackPanel>
             </Border>
 

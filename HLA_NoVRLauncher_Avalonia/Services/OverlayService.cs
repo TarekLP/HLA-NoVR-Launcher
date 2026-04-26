@@ -43,9 +43,10 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 	///
 	/// Responsibilities:
 	///   - Wait for hlvr.exe to appear, then create and position the overlay
-	///   - Keep overlay geometry in sync with the game window (10 ms loop)
+	///   - Keep overlay geometry in sync with the game window (10ms loop)
 	///   - Tail console.log and drive the state machine from game events
 	///   - Send commands back to the game via main_menu_exec.lua + PAUSE key
+	///   - Continuously re-assert topmost so the game can't push us behind it
 	/// </summary>
 	public sealed class OverlayService : IDisposable
 	{
@@ -56,7 +57,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		private const string LuaExecRelPath   = "game/hlvr/scripts/vscripts/main_menu_exec.lua";
 		private const string ConsoleLogRelPath = "game/hlvr/console.log";
 
-		// Lines the console monitor watches for
 		private const string LineMainMenu    = "[GameMenu] main_menu_mode";
 		private const string LinePause       = "[GameMenu] hide";
 		private const string LineAchievement = "[GameMenu] give_achievement";
@@ -78,6 +78,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		private CancellationTokenSource? _cts;
 		private Task? _geometryTask;
 		private Task? _consoleTask;
+		private Task? _topmostTask;
 
 		// -----------------------------------------------------------------------
 		// Public events
@@ -86,10 +87,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		/// <summary>Fired every time the overlay state changes.</summary>
 		public event Action<OverlayState>? StateChanged;
 
-		/// <summary>
-		/// Fired when the game sends a give_achievement command.
-		/// The string argument is the achievement ID.
-		/// </summary>
+		/// <summary>Fired when the game sends a give_achievement command.</summary>
 		public event Action<string>? AchievementReceived;
 
 		/// <summary>Fired when the game window disappears (game closed/crashed).</summary>
@@ -100,6 +98,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		// -----------------------------------------------------------------------
 
 		public OverlayState State => _state;
+
+		/// <summary>
+		/// True once InitializeAsync has been called. If the user launches hlvr.exe
+		/// directly this service is never instantiated, so the flag stays false and
+		/// the game correctly shows its "start from launcher" message.
+		/// </summary>
+		public bool WasLaunchedByUs { get; private set; } = false;
 
 		// -----------------------------------------------------------------------
 		// Constructor
@@ -116,53 +121,62 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		/// <summary>
 		/// Waits for hlvr.exe to appear, then creates and positions the overlay
-		/// window. Also starts the geometry sync loop and the console monitor.
-		///
-		/// The <paramref name="windowFactory"/> delegate is called on the UI thread
-		/// after the game window is found so callers can create their Avalonia
-		/// window normally.
+		/// window. Also starts the geometry sync loop, the console monitor, and
+		/// the topmost reassertion loop.
 		/// </summary>
 		public async Task InitializeAsync(
-			string            gamePath,
-			Func<Window>      windowFactory,
+			string gamePath,
+			Func<Window> windowFactory,
 			CancellationToken cancellationToken = default)
 		{
-			if (string.IsNullOrWhiteSpace(gamePath))
-				throw new ArgumentException("gamePath cannot be empty", nameof(gamePath));
-
+			WasLaunchedByUs = true;
 			_gamePath = gamePath;
-			_cts      = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			_cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-			// 1. Wait for game window (blocks until hlvr.exe appears or timeout)
 			Console.WriteLine("[Overlay] Waiting for hlvr.exe...");
 			_gameHwnd = await _helper.WaitForGameWindowAsync(
 				"hlvr.exe",
 				cancellationToken: _cts.Token);
+			Console.WriteLine($"[Overlay] Found game hwnd: 0x{_gameHwnd:X}");
 
-			Console.WriteLine($"[Overlay] Game window found: 0x{_gameHwnd:X}");
+			// Check geometry immediately
+			var (gx, gy, gw, gh) = _helper.GetWindowGeometry(_gameHwnd);
+			Console.WriteLine($"[Overlay] Game geometry: {gx},{gy} {gw}x{gh}");
 
-			// 2. Create the overlay window on the UI thread, position it immediately
 			await Dispatcher.UIThread.InvokeAsync(() =>
 			{
 				_window = windowFactory();
+				if (gw > 0 && gh > 0)
+				{
+					var scale = _window.RenderScaling;
+					_window.Position = new Avalonia.PixelPoint(gx, gy);
+					_window.Width = gw / scale;
+					_window.Height = gh / scale;
+				}
+				else
+				{
+					Console.WriteLine("[Overlay] WARNING: geometry was zero, using fallback 1280x720");
+					_window.Width = 1280;
+					_window.Height = 720;
+				}
+
 				_window.Show();
-				SyncGeometry();
-
-				// Get the native Win32 handle and force topmost.
-				// Avalonia's Topmost="True" alone isn't enough to beat a game window —
-				// we need to call SetWindowPos(HWND_TOPMOST) directly.
-				IntPtr overlayHwnd = _window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-				Console.WriteLine($"[Overlay] Overlay hwnd: 0x{overlayHwnd:X}");
-
-				if (overlayHwnd != IntPtr.Zero)
-					_helper.SetTopmost(overlayHwnd);
+				Console.WriteLine("[Overlay] Window shown.");
 			});
 
-			Console.WriteLine("[Overlay] Window shown and forced topmost.");
+			await Task.Delay(200, _cts.Token);
 
-			// 3. Start background loops
+			await Dispatcher.UIThread.InvokeAsync(() =>
+			{
+				IntPtr hwnd = _window?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+				Console.WriteLine($"[Overlay] Native hwnd: 0x{hwnd:X}");
+				if (hwnd != IntPtr.Zero)
+					_helper.SetTopmost(hwnd);
+			});
+
 			_geometryTask = RunGeometryLoopAsync(_cts.Token);
-			_consoleTask  = RunConsoleMonitorAsync(_cts.Token);
+			_consoleTask = RunConsoleMonitorAsync(_cts.Token);
+			_topmostTask = RunTopmostLoopAsync(_cts.Token);
 		}
 
 		// -----------------------------------------------------------------------
@@ -171,7 +185,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		/// <summary>
 		/// Sends a console command to the running game.
-		/// Flow: write Lua to main_menu_exec.lua -> send PAUSE key -> game executes.
+		/// Flow: write Lua to main_menu_exec.lua → send PAUSE key → game executes.
 		/// </summary>
 		public async Task SendCommandAsync(string consoleCommand)
 		{
@@ -202,6 +216,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 			try { _geometryTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
 			try { _consoleTask?.Wait(TimeSpan.FromSeconds(2));  } catch { }
+			try { _topmostTask?.Wait(TimeSpan.FromSeconds(2));  } catch { }
 
 			_cts?.Dispose();
 
@@ -212,11 +227,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		// State machine
 		// -----------------------------------------------------------------------
 
-		/// <summary>
-		/// Transitions to a new state and shows/hides the window accordingly.
-		/// All callers are on the console-monitor background thread; Show/Hide
-		/// dispatch to the UI thread internally so this is safe to call from anywhere.
-		/// </summary>
 		private void TransitionTo(OverlayState next)
 		{
 			if (_state == next) return;
@@ -239,9 +249,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			}
 		}
 
-		/// <summary>
-		/// Interprets one new line from console.log and drives the state machine.
-		/// </summary>
 		private void HandleConsoleLine(string line)
 		{
 			if (line.Contains(LineMainMenu))
@@ -250,7 +257,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			}
 			else if (line.Contains(LinePause))
 			{
-				// "[GameMenu] hide" means the game wants us to show the pause menu
 				TransitionTo(OverlayState.Paused);
 			}
 			else if (line.Contains(LineLoading) || line.Contains(LineRestoring))
@@ -259,7 +265,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			}
 			else if (line.Contains(LineAchievement))
 			{
-				// "[GameMenu] give_achievement <id>"
 				string[] parts = line.Split(
 					new[] { "[GameMenu] give_achievement " },
 					StringSplitOptions.None);
@@ -281,15 +286,27 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 					_gameHwnd,
 					geometry =>
 					{
-						// MonitorGameWindowAsync only fires when geometry actually changes,
-						// so every invocation here is a real resize or move — apply it.
 						var (x, y, w, h) = geometry;
 						Dispatcher.UIThread.Post(() =>
 						{
 							if (_window == null) return;
+
+							// GetWindowGeometry returns physical pixels.
+							// Avalonia Width/Height are logical pixels.
+							// Divide by RenderScaling to convert correctly.
+							// (e.g. at 150% DPI: 2560px / 1.5 = 1706 logical px)
+							var scale = _window.RenderScaling;
+
 							_window.Position = new Avalonia.PixelPoint(x, y);
-							_window.Width    = w;
-							_window.Height   = h;
+							_window.Width    = w / scale;
+							_window.Height   = h / scale;
+
+							// Re-assert topmost on every geometry change.
+							// The game can knock our window behind it when it
+							// resizes or receives focus events.
+							IntPtr hwnd = _window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+							if (hwnd != IntPtr.Zero)
+								_helper.SetTopmost(hwnd);
 						});
 					},
 					ct);
@@ -298,9 +315,39 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			catch (Exception ex)
 			{
 				Console.WriteLine($"[OverlayService] Geometry loop error: {ex.Message}");
-				// Geometry loop dying almost always means the game window is gone
 				GameExited?.Invoke();
 			}
+		}
+
+		// -----------------------------------------------------------------------
+		// Topmost reassertion loop
+		// -----------------------------------------------------------------------
+
+		/// <summary>
+		/// Re-asserts topmost every 500ms as a backstop. The game window can
+		/// reclaim topmost during its own initialization or when regaining focus
+		/// and the geometry loop only fires on window moves/resizes — so we need
+		/// this separate heartbeat to cover static fullscreen-windowed scenarios.
+		/// </summary>
+		private async Task RunTopmostLoopAsync(CancellationToken ct)
+		{
+			try
+			{
+				while (!ct.IsCancellationRequested)
+				{
+					await Task.Delay(500, ct);
+
+					if (_window == null) continue;
+
+					await Dispatcher.UIThread.InvokeAsync(() =>
+					{
+						IntPtr hwnd = _window?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+						if (hwnd != IntPtr.Zero)
+							_helper.SetTopmost(hwnd);
+					});
+				}
+			}
+			catch (OperationCanceledException) { }
 		}
 
 		// -----------------------------------------------------------------------
@@ -308,20 +355,25 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		// -----------------------------------------------------------------------
 
 		/// <summary>
-		/// Tails console.log from the last-read byte position, so each poll only
-		/// processes lines the game wrote since the previous poll. This avoids
-		/// re-scanning the entire file (which grows continuously) every 100 ms.
+		/// Tails console.log from the end of the file at startup, so old messages
+		/// from previous sessions are ignored. Only lines written after the launcher
+		/// started are processed.
 		/// </summary>
 		private async Task RunConsoleMonitorAsync(CancellationToken ct)
 		{
 			string consolePath = Path.Combine(_gamePath!, ConsoleLogRelPath);
-			long   filePos     = 0;
+
+			// Start at the current end of the file — ignore everything written
+			// by previous game sessions. Without this, stale "[GameMenu]" lines
+			// trigger false state transitions on every launch.
+			long filePos = File.Exists(consolePath)
+				? new FileInfo(consolePath).Length
+				: 0;
 
 			try
 			{
 				while (!ct.IsCancellationRequested)
 				{
-					// The log file doesn't exist until the game has started up far enough
 					if (!File.Exists(consolePath))
 					{
 						await Task.Delay(500, ct);
@@ -337,7 +389,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 							// Must share with hlvr.exe which keeps the file open for writing
 							FileShare.ReadWrite);
 
-						// Seek to where we left off; reset if the file was rotated/truncated
+						// Seek to where we left off; reset if file was rotated/truncated
 						fs.Seek(filePos <= fs.Length ? filePos : 0, SeekOrigin.Begin);
 
 						using var reader = new StreamReader(fs);
@@ -348,7 +400,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 								HandleConsoleLine(line);
 						}
 
-						// Remember position so next poll starts from here
 						filePos = fs.Position;
 					}
 					catch (IOException)
@@ -372,17 +423,18 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		/// <summary>
 		/// Reads the current game window geometry and applies it to the overlay
-		/// immediately. Call once on startup before the geometry loop begins.
-		/// Must be called on the UI thread.
+		/// immediately. Must be called on the UI thread.
 		/// </summary>
 		private void SyncGeometry()
 		{
 			if (_window == null || _gameHwnd == IntPtr.Zero) return;
 
 			var (x, y, w, h) = _helper.GetWindowGeometry(_gameHwnd);
+			var scale = _window.RenderScaling;
+
 			_window.Position = new Avalonia.PixelPoint(x, y);
-			_window.Width    = w;
-			_window.Height   = h;
+			_window.Width    = w / scale;
+			_window.Height   = h / scale;
 		}
 
 		/// <summary>Escapes a string for safe embedding inside a Lua string literal.</summary>

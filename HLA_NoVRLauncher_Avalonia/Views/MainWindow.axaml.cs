@@ -62,5 +62,7 @@ namespace HLA_NoVRLauncher_Avalonia.Views
 			if (DataContext is MainWindowViewModel vm)
 				vm.RunSetupCommand.Execute(null);
 		}
+
+
 	}
 }

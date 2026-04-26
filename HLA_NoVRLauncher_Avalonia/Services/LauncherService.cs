@@ -1,4 +1,4 @@
-﻿using HLA_NoVRLauncher_Avalonia.Models;
+using HLA_NoVRLauncher_Avalonia.Models;
 using Microsoft.Win32;
 using System;
 using System.Diagnostics;
@@ -66,7 +66,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			{
 				using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
 				return key?.GetValue("SteamPath")?.ToString()
-							   ?.Replace('/', Path.DirectorySeparatorChar);
+						   ?.Replace('/', Path.DirectorySeparatorChar);
 			}
 
 			string[] linuxPaths =
@@ -133,30 +133,46 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 	/// <summary>
 	/// Handles game launch with configurable settings and process monitoring.
-	/// 
+	///
 	/// Launch presets:
 	///   "Standard" — applies only the options the user configured manually.
-	///   "Debug"    — Standard + -condebug -console -vconsole for full logging.
+	///   "Debug"    — Standard + -console -vconsole for full logging.
 	/// </summary>
 	public class LaunchService
 	{
 		private const string AppId = "546560";
 
-		// Core args that are always present regardless of preset
+		// Core args always present regardless of preset.
+		//
+		// -condebug   : Required. novr.lua calls GlobalSys:CommandLineCheck("-condebug")
+		//               and shows "The game needs to be started from the launcher!" if
+		//               it's missing. This is the sole launcher detection mechanism.
+		//
+		// -window     : Required for the overlay. Fullscreen exclusive hands the GPU
+		//               directly to the game — no other window can appear on top of it
+		//               regardless of topmost flags. Windowed mode is mandatory.
+		//
+		// -noborder   : Removes the window chrome so windowed looks like fullscreen.
+		//
+		// +hlvr_main_menu_delay* : Suppresses the game's own built-in menu so our
+		//               C# overlay can take over menu rendering entirely.
 		private const string BaseArgs =
 			"-novr +sc_no_cull 1 +sv_cheats 1 +sc_force_lod_level 0 " +
-			"+vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0";
+			"+vr_expand_cull_frustum 360 +vr_enable_fake_vr 1 +vr_shadow_map_culling 0 " +
+			"-condebug -fullscreen -noborder ";
+
+		private const string LauncherMarkerRelPath = "game/hlvr/scripts/vscripts/main_menu_exec.lua";
+		private const string LauncherMarkerContent  = "-- HLA-NoVR Launcher\n";
+		private const string ExecutableSubPath = "game/bin/win64/hlvr.exe";
 
 		public void LaunchGame(string extraArgs, Action onExited, LauncherSettings settings)
 		{
 			var args = new StringBuilder(BaseArgs);
+			WriteLauncherMarker(settings.GamePath);
 
-			// --- User-configured options (applied for all presets) ---
-			if (settings.Windowed)
-				args.Append(" -window");
-
-			if (settings.Fullscreen)
-				args.Append($" -w {settings.FullscreenWidth} -h {settings.FullscreenHeight}");
+			if (!settings.DefaultMenu)
+				args.Append(" +hlvr_main_menu_delay 999999 +hlvr_main_menu_delay_with_intro 999999 " +
+							"+hlvr_main_menu_delay_with_intro_and_saves 999999");
 
 			if (settings.DefaultMenu)
 				args.Append(" -defaultmenu");
@@ -164,28 +180,43 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			if (settings.VSync)
 				args.Append(" -vsync");
 
-			// --- Preset-specific options ---
 			if (settings.LaunchPreset == "Debug")
-				args.Append(" -condebug -console -vconsole");
+				args.Append(" -console -vconsole");
 
-			// --- User's custom args (always appended last) ---
 			if (!string.IsNullOrWhiteSpace(extraArgs))
 				args.Append($" {extraArgs.Trim()}");
 
-			string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(args.ToString())}";
-
-			Process.Start(new ProcessStartInfo
+			if (settings.LaunchMethod == "Direct")
 			{
-				FileName = uri,
-				UseShellExecute = true
-			});
+				// Launch hlvr.exe directly — bypasses Steam's custom args confirmation
+				// dialog and launches faster. Requires game to already be installed.
+				string exePath = Path.Combine(
+					settings.GamePath,
+					ExecutableSubPath.Replace('/', Path.DirectorySeparatorChar));
+
+				Process.Start(new ProcessStartInfo
+				{
+					FileName = exePath,
+					Arguments = args.ToString(),
+					UseShellExecute = false,
+					WorkingDirectory = Path.GetDirectoryName(exePath)
+				});
+			}
+			else
+			{
+				// Steam URI — lets Steam handle the launch, shows the custom args
+				// confirmation dialog if args are non-standard.
+				string uri = $"steam://run/{AppId}//{Uri.EscapeDataString(args.ToString())}";
+				Process.Start(new ProcessStartInfo
+				{
+					FileName = uri,
+					UseShellExecute = true
+				});
+			}
 
 			Task.Run(async () =>
 			{
-				// Wait up to 60 seconds for hlvr.exe to appear.
-				// If the user cancels the Steam dialog it never starts — reset status.
 				var deadline = DateTime.UtcNow.AddSeconds(60);
-
 				while (DateTime.UtcNow < deadline)
 				{
 					var procs = Process.GetProcessesByName("hlvr");
@@ -197,12 +228,37 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 					}
 					await Task.Delay(2000);
 				}
-
-				// Timed out — user cancelled the Steam dialog
 				onExited?.Invoke();
 			});
 		}
+
+		/// <summary>
+		/// Writes a valid Lua comment to main_menu_exec.lua before launch.
+		/// novr.lua uses GlobalSys:CommandLineCheck("-condebug") as the primary
+		/// launcher check, but having this file present ensures SendToConsole
+		/// commands work from the very first frame.
+		/// </summary>
+		private void WriteLauncherMarker(string gamePath)
+		{
+			if (string.IsNullOrEmpty(gamePath)) return;
+
+			try
+			{
+				string path = Path.Combine(
+					gamePath,
+					LauncherMarkerRelPath.Replace('/', Path.DirectorySeparatorChar));
+
+				// Only write if the directory exists (mod is installed)
+				if (Directory.Exists(Path.GetDirectoryName(path)))
+					File.WriteAllText(path, LauncherMarkerContent);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[LaunchService] Could not write launcher marker: {ex.Message}");
+			}
+		}
 	}
+
 	/// <summary>
 	/// Provides cross-platform window management and helper process execution.
 	/// Supports Windows (Win32 API) and Linux (X11).
@@ -267,8 +323,8 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			private static extern bool SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
 			private const uint WM_KEYDOWN = 0x0100;
-			private const uint WM_KEYUP = 0x0101;
-			private const int VK_PAUSE = 0x13;
+			private const uint WM_KEYUP   = 0x0101;
+			private const int  VK_PAUSE   = 0x13;
 
 			// ============ Windows Data Structures ============
 
@@ -302,6 +358,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				public int x;
 				public int y;
 			}
+
 			public static IntPtr GetWindowFromProcessID(uint processID)
 			{
 				IntPtr hwnd = GetTopWindow(IntPtr.Zero);
@@ -309,9 +366,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				{
 					GetWindowThreadProcessId(hwnd, out uint wndProcID);
 					if (wndProcID == processID && IsWindowVisible(hwnd))
-					{
 						return hwnd;
-					}
 					hwnd = GetNextWindow(hwnd, GW_HWNDNEXT);
 				}
 				return IntPtr.Zero;
@@ -366,7 +421,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				if (hwnd != IntPtr.Zero)
 				{
 					SendMessage(hwnd, WM_KEYDOWN, (IntPtr)VK_PAUSE, IntPtr.Zero);
-					SendMessage(hwnd, WM_KEYUP, (IntPtr)VK_PAUSE, IntPtr.Zero);
+					SendMessage(hwnd, WM_KEYUP,   (IntPtr)VK_PAUSE, IntPtr.Zero);
 				}
 			}
 
@@ -376,13 +431,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 					return (0, 0, 0, 0);
 
 				GetClientRect(hwnd, out Rect rect);
-				var topLeft = new Point { x = rect.left, y = rect.top };
+				var topLeft     = new Point { x = rect.left,  y = rect.top    };
 				var bottomRight = new Point { x = rect.right, y = rect.bottom };
 
 				ClientToScreen(hwnd, ref topLeft);
 				ClientToScreen(hwnd, ref bottomRight);
 
-				int width = bottomRight.x - topLeft.x;
+				int width  = bottomRight.x - topLeft.x;
 				int height = bottomRight.y - topLeft.y;
 
 				return (topLeft.x, topLeft.y, width, height);
@@ -393,18 +448,16 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				return (GetKeyState(VK_ESCAPE) & 0x8000) != 0;
 			}
 
-			// SetWindowPos — used to force the overlay on top of the game window
 			[DllImport("user32.dll", SetLastError = true)]
 			private static extern bool SetWindowPos(
 				IntPtr hWnd, IntPtr hWndInsertAfter,
 				int x, int y, int cx, int cy,
 				uint uFlags);
 
-			private static readonly IntPtr HWND_TOPMOST   = new IntPtr(-1);
-			private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+			private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
-			private const uint SWP_NOMOVE    = 0x0002;
-			private const uint SWP_NOSIZE    = 0x0001;
+			private const uint SWP_NOMOVE     = 0x0002;
+			private const uint SWP_NOSIZE     = 0x0001;
 			private const uint SWP_SHOWWINDOW = 0x0040;
 
 			public static void ForceTopmost(IntPtr hwnd)
@@ -416,7 +469,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		}
 
 		private const int WINDOW_WAIT_TIMEOUT_SECONDS = 120;
-		private const int WINDOW_CHECK_INTERVAL_MS = 10;
+		private const int WINDOW_CHECK_INTERVAL_MS    = 10;
 		private const int GEOMETRY_UPDATE_INTERVAL_MS = 10;
 
 		/// <summary>
@@ -427,13 +480,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			try
 			{
 				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				{
 					ExecuteCommandWindows(command, helperExecutableName);
-				}
 				else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-				{
 					ExecuteCommandLinux(command);
-				}
 			}
 			catch (Exception ex)
 			{
@@ -446,24 +495,16 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			switch (command.ToLower())
 			{
 				case "exec":
-					{
-						IntPtr gameWindow = WindowHelper.GetWindowByExeName("hlvr.exe");
-						WindowHelper.SendPauseKey(gameWindow);
-					}
+					WindowHelper.SendPauseKey(WindowHelper.GetWindowByExeName("hlvr.exe"));
 					break;
 
 				case "focusgame":
-					{
-						IntPtr gameWindow = WindowHelper.GetWindowByExeName("hlvr.exe");
-						WindowHelper.FocusWindow(gameWindow);
-					}
+					WindowHelper.FocusWindow(WindowHelper.GetWindowByExeName("hlvr.exe"));
 					break;
 
 				case "focuslauncher":
-					{
-						IntPtr launcherWindow = WindowHelper.FindWindowA("Engine", "Half-Life: Alyx NoVR Launcher");
-						WindowHelper.FocusWindow(launcherWindow);
-					}
+					WindowHelper.FocusWindow(
+						WindowHelper.FindWindowA("Engine", "Half-Life: Alyx NoVR Launcher"));
 					break;
 
 				case "update":
@@ -487,22 +528,12 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				int attempt = 0;
 				while (File.Exists(launcherExePath) && attempt < maxAttempts)
 				{
-					try
-					{
-						File.Delete(launcherExePath);
-						break;
-					}
-					catch
-					{
-						attempt++;
-						Thread.Sleep(100);
-					}
+					try   { File.Delete(launcherExePath); break; }
+					catch { attempt++; Thread.Sleep(100); }
 				}
 
 				if (File.Exists(updatePath))
-				{
 					File.Move(updatePath, launcherExePath, true);
-				}
 
 				Process.Start(new ProcessStartInfo
 				{
@@ -517,7 +548,8 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		}
 
 		/// <summary>
-		/// Monitors game window geometry periodically. Useful for positioning overlays.
+		/// Monitors game window geometry periodically. Fires the callback only
+		/// when the geometry actually changes, keeping CPU usage minimal.
 		/// </summary>
 		public async Task MonitorGameWindowAsync(
 			IntPtr gameWindow,
@@ -544,7 +576,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		}
 
 		/// <summary>
-		/// Waits for the game window to appear, with timeout and parent setup.
+		/// Waits for the game window to appear, with timeout.
 		/// </summary>
 		public async Task<IntPtr> WaitForGameWindowAsync(
 			string gameExecutableName,
@@ -557,10 +589,8 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			while (!cancellationToken.IsCancellationRequested)
 			{
 				if ((DateTime.UtcNow - startTime).TotalSeconds > WINDOW_WAIT_TIMEOUT_SECONDS)
-				{
 					throw new TimeoutException(
 						$"Game window not found after {WINDOW_WAIT_TIMEOUT_SECONDS} seconds");
-				}
 
 				IntPtr gameWindow = WindowHelper.GetWindowByExeName(gameExecutableName);
 
@@ -571,7 +601,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 						WindowHelper.SetParent(menuWindow, gameWindow);
 						WindowHelper.FocusWindow(gameWindow);
 					}
-
 					return gameWindow;
 				}
 
@@ -581,9 +610,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			throw new OperationCanceledException("Waiting for game window was cancelled");
 		}
 
-		/// <summary>
-		/// Finds a window by class name and title (Windows only).
-		/// </summary>
+		/// <summary>Finds a window by class name and title (Windows only).</summary>
 		public IntPtr FindWindowByName(string className, string windowTitle)
 		{
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -592,9 +619,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			return WindowHelper.FindWindowA(className, windowTitle);
 		}
 
-		/// <summary>
-		/// Gets the game process by executable name.
-		/// </summary>
+		/// <summary>Gets the game process by executable name.</summary>
 		public Process? GetGameProcess(string gameExecutableName)
 		{
 			var processes = Process.GetProcessesByName(gameExecutableName.Replace(".exe", ""));
@@ -603,21 +628,21 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 		/// <summary>
 		/// Returns the current position and size of a window in screen pixels.
-		/// Wraps the private WindowHelper method so other services can call it.
 		/// </summary>
 		public (int x, int y, int width, int height) GetWindowGeometry(IntPtr hwnd)
-		{
-			return WindowHelper.GetWindowGeometry(hwnd);
-		}
+			=> WindowHelper.GetWindowGeometry(hwnd);
 
 		/// <summary>
 		/// Forces a window to be always-on-top using Win32 SetWindowPos.
-		/// More reliable than Avalonia's Topmost property when competing with
-		/// a fullscreen or topmost game window.
 		/// </summary>
 		public void SetTopmost(IntPtr hwnd)
-		{
-			WindowHelper.ForceTopmost(hwnd);
-		}
+			=> WindowHelper.ForceTopmost(hwnd);
+
+		/// <summary>
+		/// Makes childHwnd an owned window of parentHwnd so it stays above it
+		/// in Win32 Z-order.
+		/// </summary>
+		public void SetParent(IntPtr childHwnd, IntPtr parentHwnd)
+			=> WindowHelper.SetParent(childHwnd, parentHwnd);
 	}
 }

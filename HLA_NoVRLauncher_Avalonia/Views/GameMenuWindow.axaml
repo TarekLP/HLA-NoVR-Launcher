@@ -3,24 +3,28 @@
         x:Class="HLA_NoVRLauncher_Avalonia.Views.GameMenuWindow"
         Title="Game Menu"
         SystemDecorations="None"
-        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Background="{x:Null}"
         Topmost="True"
         ShowInTaskbar="False"
+        ShowActivated="False"
         CanResize="False"
         Width="960"
         Height="600">
 
     <!--
-        Step 4 — Positioning proof-of-concept.
+        TransparencyLevelHint="Transparent" + Background="{x:Null}" is the correct
+        combination for a true click-through overlay.
 
-        This window intentionally contains nothing but a small labelled box.
-        When you launch the game and see this box sitting over the game window,
-        geometry sync is confirmed to be working. Replace this content with the
-        real menu panels in steps 7+.
+        Background="Transparent" looks the same visually but still captures ALL mouse
+        input, blocking the game. Background="{x:Null}" removes the brush entirely,
+        which tells Avalonia's hit-testing that empty areas have nothing to click on,
+        so mouse events fall through to the game window behind it.
     -->
-    <Grid Background="Transparent">
+    <Grid Background="{x:Null}">
 
-        <!-- Coloured indicator box — centred in the overlay -->
+        <!-- Coloured indicator box — centred in the overlay.
+             Replace this with real menu panels in later steps. -->
         <Border HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 BorderBrush="#CF9F13"
@@ -37,7 +41,7 @@
                            Foreground="#CF9F13"
                            HorizontalAlignment="Center" />
 
-                <TextBlock Text="Step 4 — Geometry sync test"
+                <TextBlock Text="Geometry sync test"
                            FontSize="13"
                            Foreground="White"
                            HorizontalAlignment="Center" />

@@ -45,7 +45,7 @@ namespace HLA_NoVRLauncher_Avalonia.Views
 							is IClassicDesktopStyleApplicationLifetime desktop &&
 						desktop.MainWindow?.DataContext is MainWindowViewModel vm)
 					{
-						vm.NavigateToLauncher();
+						vm.NavigateMain();
 
 						// Re-activate so Avalonia re-registers pointer events on the sidebar
 						desktop.MainWindow.Activate();

@@ -12,7 +12,7 @@ namespace HLA_NoVRLauncher_Avalonia.Models
         [ObservableProperty] private string _modBranch = "main";
 
         // HLVR Launch Options
-        [ObservableProperty] private bool _windowed = false;
+
         [ObservableProperty] private bool _fullscreen = false;
         [ObservableProperty] private int _fullscreenWidth = 1920;
         [ObservableProperty] private int _fullscreenHeight = 1080;
@@ -29,5 +29,6 @@ namespace HLA_NoVRLauncher_Avalonia.Models
         // Launcher Options
         [ObservableProperty] private bool _firstRun = true;
         [ObservableProperty] private string _backupLocation = "Launcher";
-    }
+		[ObservableProperty] private string _launchMethod = "Steam URI";
+	}
 }
