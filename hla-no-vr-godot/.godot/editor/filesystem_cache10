@@ -1,0 +1,11 @@
+63f7b34db8d8cdea90c76aacccf841ec
+::res://::1778082735
+AchievementPopup.gd::GDScript::2694920815872034926::1778077719::0::1::::<>Control<><>0<>0<><>::
+icon.svg::CompressedTexture2D::677629055719766021::1777975039::1777975236::1::::<><><>0<>0<>250405baa80e12c140fe218afd7fb2d9<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
+main.gd::GDScript::3434492601584748282::1777975616::0::1::::<>Node<><>0<>0<><>::
+main.tscn::PackedScene::720315991280865831::1778078497::0::1::::<><><>0<>0<><>::uid://bo6xudu560dhi::::res://main.gd<>uid://cn24dcu3p0522::::res://MainMenuPanel.gd<>uid://dfuph4od281q0::::res://PausePanel.gd<>uid://beno7mvruc767::::res://AchievementPopup.gd
+MainMenuPanel.gd::GDScript::5742800821448222945::1778077712::0::1::::<>Control<><>0<>0<><>::
+PausePanel.gd::GDScript::7552418624777622841::1778077715::0::1::::<>Control<><>0<>0<><>::
+::res://autoload/::1778078534
+CommandBus.gd::GDScript::3366191455286170931::1777975397::0::1::::<>Node<><>0<>0<><>::
+OverlaySocket.gd::GDScript::7059997729784444710::1777975400::0::1::::<>Node<><>0<>0<><>::

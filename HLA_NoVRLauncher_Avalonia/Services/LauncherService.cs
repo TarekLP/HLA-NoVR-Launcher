@@ -216,18 +216,17 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 			Task.Run(async () =>
 			{
-				var deadline = DateTime.UtcNow.AddSeconds(60);
-				while (DateTime.UtcNow < deadline)
+				Process? gameProcess = null;
+				while (gameProcess == null)
 				{
 					var procs = Process.GetProcessesByName("hlvr");
 					if (procs.Length > 0)
-					{
-						await procs[0].WaitForExitAsync();
-						onExited?.Invoke();
-						return;
-					}
-					await Task.Delay(2000);
+						gameProcess = procs[0];
+					else
+						await Task.Delay(2000);
 				}
+
+				await gameProcess.WaitForExitAsync();
 				onExited?.Invoke();
 			});
 		}
@@ -303,8 +302,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			[DllImport("user32.dll")]
 			private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-			[DllImport("user32.dll")]
-			private static extern bool SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+			[DllImport("user32.dll", SetLastError = true)]
+			private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+
+			[DllImport("user32.dll", SetLastError = true)]
+			private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
 
 			private const int GWLP_HWNDPARENT = -8;
 
@@ -358,18 +362,27 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				public int x;
 				public int y;
 			}
-
 			public static IntPtr GetWindowFromProcessID(uint processID)
 			{
 				IntPtr hwnd = GetTopWindow(IntPtr.Zero);
 				while (hwnd != IntPtr.Zero)
 				{
 					GetWindowThreadProcessId(hwnd, out uint wndProcID);
-					if (wndProcID == processID && IsWindowVisible(hwnd))
+					if (wndProcID == processID)
 						return hwnd;
 					hwnd = GetNextWindow(hwnd, GW_HWNDNEXT);
 				}
 				return IntPtr.Zero;
+			}
+
+			private const int GWL_EXSTYLE = -20;
+			private const uint WS_EX_NOACTIVATE = 0x08000000;
+
+			public static void SetNoActivate(IntPtr hwnd)
+			{
+				if (hwnd == IntPtr.Zero) return;
+				IntPtr style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+				SetWindowLongPtr(hwnd, GWL_EXSTYLE, (IntPtr)((uint)style | WS_EX_NOACTIVATE));
 			}
 
 			public static uint GetProcessIDByExeName(string exeName)
@@ -454,17 +467,50 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				int x, int y, int cx, int cy,
 				uint uFlags);
 
+			[DllImport("user32.dll")]
+			private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
 			private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
-			private const uint SWP_NOMOVE     = 0x0002;
-			private const uint SWP_NOSIZE     = 0x0001;
-			private const uint SWP_SHOWWINDOW = 0x0040;
+			private const uint SWP_NOMOVE      = 0x0002;
+			private const uint SWP_NOSIZE      = 0x0001;
+			private const uint SWP_SHOWWINDOW  = 0x0040;
+			private const uint SWP_NOACTIVATE  = 0x0010;
+			private const uint SWP_NOZORDER    = 0x0004;
+
+			private const int SW_HIDE = 0;
+			private const int SW_SHOW = 5;
 
 			public static void ForceTopmost(IntPtr hwnd)
 			{
 				if (hwnd == IntPtr.Zero) return;
 				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+			}
+
+			/// <summary>
+			/// Moves and resizes a window to the given screen-space bounds (physical pixels).
+			/// Does not change Z-order or activation state.
+			/// </summary>
+			public static void SetBounds(IntPtr hwnd, int x, int y, int w, int h)
+			{
+				if (hwnd == IntPtr.Zero) return;
+				SetWindowPos(hwnd, IntPtr.Zero, x, y, w, h,
+					SWP_NOZORDER | SWP_NOACTIVATE);
+			}
+
+			/// <summary>Makes a window visible without activating or changing Z-order.</summary>
+			public static void Show(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+					ShowWindow(hwnd, SW_SHOW);
+			}
+
+			/// <summary>Hides a window without destroying it.</summary>
+			public static void Hide(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+					ShowWindow(hwnd, SW_HIDE);
 			}
 		}
 
@@ -588,10 +634,6 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 			while (!cancellationToken.IsCancellationRequested)
 			{
-				if ((DateTime.UtcNow - startTime).TotalSeconds > WINDOW_WAIT_TIMEOUT_SECONDS)
-					throw new TimeoutException(
-						$"Game window not found after {WINDOW_WAIT_TIMEOUT_SECONDS} seconds");
-
 				IntPtr gameWindow = WindowHelper.GetWindowByExeName(gameExecutableName);
 
 				if (gameWindow != IntPtr.Zero)
@@ -609,6 +651,8 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 			throw new OperationCanceledException("Waiting for game window was cancelled");
 		}
+
+
 
 		/// <summary>Finds a window by class name and title (Windows only).</summary>
 		public IntPtr FindWindowByName(string className, string windowTitle)
@@ -639,10 +683,34 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			=> WindowHelper.ForceTopmost(hwnd);
 
 		/// <summary>
+		/// Moves and resizes a window to match the given screen-space bounds (physical pixels).
+		/// Used to keep the Godot overlay positioned over the game window.
+		/// </summary>
+		public void SetWindowBounds(IntPtr hwnd, int x, int y, int w, int h)
+			=> WindowHelper.SetBounds(hwnd, x, y, w, h);
+
+		/// <summary>Makes the window visible without stealing focus.</summary>
+		public void ShowWindow(IntPtr hwnd)
+			=> WindowHelper.Show(hwnd);
+
+		/// <summary>Hides the window without destroying it.</summary>
+		public void HideWindow(IntPtr hwnd)
+			=> WindowHelper.Hide(hwnd);
+
+		/// <summary>
 		/// Makes childHwnd an owned window of parentHwnd so it stays above it
 		/// in Win32 Z-order.
 		/// </summary>
 		public void SetParent(IntPtr childHwnd, IntPtr parentHwnd)
 			=> WindowHelper.SetParent(childHwnd, parentHwnd);
+
+		/// <summary>
+		/// Prevents the overlay from stealing focus from the game when clicked.
+		/// </summary>
+		public void SetNoActivate(IntPtr hwnd)
+			=> WindowHelper.SetNoActivate(hwnd);
+
+
 	}
+
 }

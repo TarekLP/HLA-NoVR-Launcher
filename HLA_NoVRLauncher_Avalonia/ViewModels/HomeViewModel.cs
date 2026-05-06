@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HLA_NoVRLauncher_Avalonia.Models;
 using HLA_NoVRLauncher_Avalonia.Services;
+using Metsys.Bson;
 using System;
 using System.Threading.Tasks;
 
@@ -183,7 +184,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 
 				if (factory != null)
 				{
-					_overlayService = new OverlayService(_helperService);
+					var overlay = new GodotOverlayService(_helperService);
 
 					// Log state transitions — useful while building the real menu
 					_overlayService.StateChanged += state =>
@@ -203,7 +204,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 						{
 							Console.WriteLine($"[Overlay] Starting. GamePath='{gamePath}'");
 							Console.WriteLine($"[Overlay] Factory is null: {factory == null}");
-							await _overlayService.InitializeAsync(gamePath, factory);
+							await overlay.InitializeAsync(gamePath, godotExePath);
 							Console.WriteLine("[Overlay] InitializeAsync completed.");
 						}
 						catch (OperationCanceledException)
@@ -303,7 +304,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		}
 
 		// -----------------------------------------------------------------------
-		// Other commands (unchanged)
+		// Other commands 
 		// -----------------------------------------------------------------------
 
 		[RelayCommand]

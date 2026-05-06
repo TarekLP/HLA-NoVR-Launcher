@@ -1,0 +1,339 @@
+[gd_scene format=3 uid="uid://ki6q8acvital"]
+
+[ext_resource type="Script" uid="uid://bo6xudu560dhi" path="res://main.gd" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://cn24dcu3p0522" path="res://MainMenuPanel.gd" id="2_mainmenu"]
+[ext_resource type="Script" uid="uid://dfuph4od281q0" path="res://PausePanel.gd" id="3_pause"]
+[ext_resource type="Script" uid="uid://beno7mvruc767" path="res://AchievementPopup.gd" id="4_achieve"]
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_Sep"]
+color = Color(0.47, 0.2, 0.73, 0.35)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_BtnNormal"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+bg_color = Color(0.08, 0.08, 0.14, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_BtnPressed"]
+content_margin_left = 13.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+bg_color = Color(0.42, 0.16, 0.65, 1)
+border_width_left = 3
+border_color = Color(0.72, 0.4, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_BtnHover"]
+content_margin_left = 13.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+bg_color = Color(0.18, 0.1, 0.3, 1)
+border_width_left = 3
+border_color = Color(0.58, 0.25, 0.85, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_BtnFocus"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+bg_color = Color(0.08, 0.08, 0.14, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_Popup"]
+bg_color = Color(0.05, 0.05, 0.09, 0.96)
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.47, 0.2, 0.73, 0.5)
+
+[node name="Control" type="Control" unique_id=23241830]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ig7tw")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=392332996]
+
+[node name="MainMenuPanel" type="Control" parent="UI" unique_id=748003895]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_mainmenu")
+
+[node name="Background" type="ColorRect" parent="UI/MainMenuPanel" unique_id=1810552222]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.03, 0.03, 0.06, 0.88)
+
+[node name="AccentBar" type="ColorRect" parent="UI/MainMenuPanel" unique_id=1105354123]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 3.0
+grow_vertical = 2
+color = Color(0.55, 0.22, 0.82, 1)
+
+[node name="MenuContainer" type="VBoxContainer" parent="UI/MainMenuPanel" unique_id=1780641885]
+layout_mode = 1
+offset_left = 90.0
+offset_top = 200.0
+offset_right = 480.0
+offset_bottom = 600.0
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="UI/MainMenuPanel/MenuContainer" unique_id=746160580]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.96, 1)
+theme_override_font_sizes/font_size = 34
+text = "HALF-LIFE: ALYX"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="UI/MainMenuPanel/MenuContainer" unique_id=1417442191]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.22, 0.82, 1)
+theme_override_font_sizes/font_size = 13
+text = "NoVR"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="UI/MainMenuPanel/MenuContainer" unique_id=1349048989]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="Separator" type="HSeparator" parent="UI/MainMenuPanel/MenuContainer" unique_id=1974677639]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_Sep")
+
+[node name="Spacer2" type="Control" parent="UI/MainMenuPanel/MenuContainer" unique_id=1043670949]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="NewGame" type="Button" parent="UI/MainMenuPanel/MenuContainer" unique_id=1281835848]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.95, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "NEW GAME"
+
+[node name="LoadGame" type="Button" parent="UI/MainMenuPanel/MenuContainer" unique_id=2144213102]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.95, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "LOAD GAME"
+
+[node name="Settings" type="Button" parent="UI/MainMenuPanel/MenuContainer" unique_id=1580837413]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.95, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "SETTINGS"
+
+[node name="Quit" type="Button" parent="UI/MainMenuPanel/MenuContainer" unique_id=2087846746]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.75, 0.82, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.3, 0.3, 1)
+theme_override_colors/font_hover_color = Color(1, 0.4, 0.4, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "QUIT"
+
+[node name="PausePanel" type="Control" parent="UI" unique_id=209955886]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3_pause")
+
+[node name="Background" type="ColorRect" parent="UI/PausePanel" unique_id=1514731929]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.03, 0.03, 0.06, 0.88)
+
+[node name="AccentBar" type="ColorRect" parent="UI/PausePanel" unique_id=1373266400]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 3.0
+grow_vertical = 2
+color = Color(0.55, 0.22, 0.82, 1)
+
+[node name="MenuContainer" type="VBoxContainer" parent="UI/PausePanel" unique_id=1706624912]
+visible = false
+layout_mode = 1
+offset_left = 90.0
+offset_top = 200.0
+offset_right = 480.0
+offset_bottom = 640.0
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="UI/PausePanel/MenuContainer" unique_id=1132477646]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.96, 1)
+theme_override_font_sizes/font_size = 34
+text = "PAUSED"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="UI/PausePanel/MenuContainer" unique_id=376591101]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="Separator" type="HSeparator" parent="UI/PausePanel/MenuContainer" unique_id=1248721790]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_Sep")
+
+[node name="Spacer2" type="Control" parent="UI/PausePanel/MenuContainer" unique_id=1965819190]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="Resume" type="Button" parent="UI/PausePanel/MenuContainer" unique_id=869349544]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.95, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "RESUME"
+
+[node name="Settings" type="Button" parent="UI/PausePanel/MenuContainer" unique_id=463112010]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.95, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "SETTINGS"
+
+[node name="MainMenu" type="Button" parent="UI/PausePanel/MenuContainer" unique_id=688929873]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.95, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "MAIN MENU"
+
+[node name="QuitDesktop" type="Button" parent="UI/PausePanel/MenuContainer" unique_id=664859370]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.75, 0.82, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.3, 0.3, 1)
+theme_override_colors/font_hover_color = Color(1, 0.4, 0.4, 1)
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_BtnNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_BtnPressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_BtnHover")
+theme_override_styles/focus = SubResource("StyleBoxFlat_BtnFocus")
+text = "QUIT TO DESKTOP"
+
+[node name="AchievementPopup" type="Control" parent="UI" unique_id=960210933]
+visible = false
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -420.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 96.0
+grow_horizontal = 0
+script = ExtResource("4_achieve")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/AchievementPopup" unique_id=1017603389]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_Popup")
+
+[node name="HBox" type="HBoxContainer" parent="UI/AchievementPopup/PanelContainer" unique_id=815282309]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="AccentStrip" type="ColorRect" parent="UI/AchievementPopup/PanelContainer/HBox" unique_id=1118408772]
+custom_minimum_size = Vector2(4, 0)
+layout_mode = 2
+color = Color(0.55, 0.22, 0.82, 1)
+
+[node name="VBox" type="VBoxContainer" parent="UI/AchievementPopup/PanelContainer/HBox" unique_id=808815350]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_override_constants/separation = 2
+alignment = 1
+
+[node name="Header" type="Label" parent="UI/AchievementPopup/PanelContainer/HBox/VBox" unique_id=1361922637]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.22, 0.82, 1)
+theme_override_font_sizes/font_size = 10
+text = "ACHIEVEMENT UNLOCKED"
+horizontal_alignment = 1
+
+[node name="Separator" type="HSeparator" parent="UI/AchievementPopup/PanelContainer/HBox/VBox" unique_id=786248910]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_Sep")
+
+[node name="NameLabel" type="Label" parent="UI/AchievementPopup/PanelContainer/HBox/VBox" unique_id=1039269627]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.96, 1)
+theme_override_font_sizes/font_size = 14
+text = "{Achievement ID}"
+horizontal_alignment = 1
+
+[node name="Timer" type="Timer" parent="UI/AchievementPopup" unique_id=1141805410]
