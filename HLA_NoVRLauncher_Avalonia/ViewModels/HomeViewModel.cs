@@ -25,7 +25,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		private readonly LauncherHelperService  _helperService    = new();
 
 		// Kept alive for the duration of the game session; disposed on game exit.
-		private GodotOverlayService? _overlayService;
+		private OverlayService? _overlayService;
 
 		// -----------------------------------------------------------------------
 		// Observable properties (unchanged from before)
@@ -145,7 +145,6 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			Console.WriteLine("=== LaunchGameAsync entered ===");
 			Console.WriteLine($"DefaultMenu={_settingsService.LoadSettings().DefaultMenu}");
 			Console.WriteLine($"GamePath='{ResolveGamePath()}'");
-			Console.WriteLine($"OverlayFactory is null: {OverlayWindowFactory == null}");
 
 			IsBusy = true;
 			Status = LauncherStatus.GameRunning;
@@ -164,7 +163,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			_launchService.LaunchGame(settings.CustomLaunchArgs, () =>
 			{
 				// Dispose the overlay first, then restore the launcher on the UI thread
-				_ = _overlayService?.DisposeAsync();
+				_overlayService?.Dispose();
 				_overlayService = null;
 
 				Dispatcher.UIThread.Post(() =>
@@ -180,49 +179,33 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			// so we fire it as a background task and let it catch up to the game process.
 			if (!settings.DefaultMenu && !string.IsNullOrEmpty(gamePath))
 			{
-				Func<Window>? factory = OverlayWindowFactory;
+				_overlayService = new OverlayService(_helperService);
 
-				if (factory != null)
+				_overlayService.StateChanged += state =>
+					Console.WriteLine($"[Overlay] → {state}");
+				_overlayService.GameExited += () =>
+					Console.WriteLine("[Overlay] Game window lost.");
+				_overlayService.AchievementReceived += id =>
+					Console.WriteLine($"[Overlay] Achievement requested: {id}");
+
+				_ = Task.Run(async () =>
 				{
-					_overlayService = new GodotOverlayService(_helperService);
-
-					// Log state transitions — useful while building the real menu
-					_overlayService.StateChanged += state =>
-						Console.WriteLine($"[Overlay] → {state}");
-
-					// Log if the geometry loop detects the game window is gone
-					_overlayService.GameExited += () =>
-						Console.WriteLine("[Overlay] Game window lost.");
-
-					// Log achievement requests (handler goes here in a later step)
-					_overlayService.AchievementReceived += id =>
-						Console.WriteLine($"[Overlay] Achievement requested: {id}");
-
-					// Godot overlay exe sits next to the launcher
-					string godotExePath = Path.Combine(
-						AppDomain.CurrentDomain.BaseDirectory,
-						"hla-no-vr-godot", "hla-no-vr-godot.exe");
-
-					_ = Task.Run(async () =>
+					try
 					{
-						try
-						{
-							Console.WriteLine($"[Overlay] Starting. GamePath='{gamePath}'");
-							Console.WriteLine($"[Overlay] GodotExe='{godotExePath}'");
-							await _overlayService.InitializeAsync(gamePath, godotExePath);
-							Console.WriteLine("[Overlay] InitializeAsync completed.");
-						}
-						catch (OperationCanceledException)
-						{
-							Console.WriteLine("[Overlay] Cancelled — game exited before overlay initialised.");
-						}
-						catch (Exception ex)
-						{
-							Console.WriteLine($"[Overlay] FAILED: {ex.GetType().Name}: {ex.Message}");
-							Console.WriteLine($"[Overlay] Stack: {ex.StackTrace}");
-						}
-					});
-				}
+						Console.WriteLine($"[Overlay] Starting. GamePath='{gamePath}'");
+						await _overlayService.InitializeAsync(gamePath);
+						Console.WriteLine("[Overlay] InitializeAsync completed.");
+					}
+					catch (OperationCanceledException)
+					{
+						Console.WriteLine("[Overlay] Cancelled — game exited before overlay initialised.");
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine($"[Overlay] FAILED: {ex.GetType().Name}: {ex.Message}");
+						Console.WriteLine($"[Overlay] Stack: {ex.StackTrace}");
+					}
+				});
 			}
 
 			await Task.CompletedTask;
