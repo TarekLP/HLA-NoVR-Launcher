@@ -102,4 +102,29 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		/// <summary>Serialises to a single JSON line (no trailing newline).</summary>
 		public string ToJson() => JsonSerializer.Serialize(this, _jsonOpts);
 	}
+
+	// ---------------------------------------------------------------------------
+	// Overlay state
+	// ---------------------------------------------------------------------------
+
+	/// <summary>
+	/// The five states the overlay can be in. Driven by console.log events.
+	/// </summary>
+	public enum OverlayState
+	{
+		/// <summary>Overlay not visible — game running normally.</summary>
+		Hidden,
+
+		/// <summary>Game just launched — showing the main menu.</summary>
+		MainMenu,
+
+		/// <summary>A chapter or save is loading — overlay hidden.</summary>
+		Loading,
+
+		/// <summary>Player is in-game — overlay hidden.</summary>
+		InGame,
+
+		/// <summary>Player pressed ESC — showing the pause menu.</summary>
+		Paused
+	}
 }

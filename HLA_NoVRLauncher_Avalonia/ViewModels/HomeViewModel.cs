@@ -6,8 +6,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HLA_NoVRLauncher_Avalonia.Models;
 using HLA_NoVRLauncher_Avalonia.Services;
-using Metsys.Bson;
 using System;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace HLA_NoVRLauncher_Avalonia.ViewModels
@@ -25,7 +25,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		private readonly LauncherHelperService  _helperService    = new();
 
 		// Kept alive for the duration of the game session; disposed on game exit.
-		private OverlayService? _overlayService;
+		private GodotOverlayService? _overlayService;
 
 		// -----------------------------------------------------------------------
 		// Observable properties (unchanged from before)
@@ -184,7 +184,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 
 				if (factory != null)
 				{
-					var overlay = new GodotOverlayService(_helperService);
+					_overlayService = new GodotOverlayService(_helperService);
 
 					// Log state transitions — useful while building the real menu
 					_overlayService.StateChanged += state =>
@@ -198,13 +198,18 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 					_overlayService.AchievementReceived += id =>
 						Console.WriteLine($"[Overlay] Achievement requested: {id}");
 
+					// Godot overlay exe sits next to the launcher
+					string godotExePath = Path.Combine(
+						AppDomain.CurrentDomain.BaseDirectory,
+						"hla-no-vr-godot", "hla-no-vr-godot.exe");
+
 					_ = Task.Run(async () =>
 					{
 						try
 						{
 							Console.WriteLine($"[Overlay] Starting. GamePath='{gamePath}'");
-							Console.WriteLine($"[Overlay] Factory is null: {factory == null}");
-							await overlay.InitializeAsync(gamePath, godotExePath);
+							Console.WriteLine($"[Overlay] GodotExe='{godotExePath}'");
+							await _overlayService.InitializeAsync(gamePath, godotExePath);
 							Console.WriteLine("[Overlay] InitializeAsync completed.");
 						}
 						catch (OperationCanceledException)

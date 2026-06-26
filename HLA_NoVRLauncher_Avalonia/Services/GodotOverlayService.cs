@@ -439,9 +439,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 				// These arguments are read by the Godot overlay on startup.
 				// The GDScript bootstrap reads them with OS.get_cmdline_args()
-				// to connect to the correct pipe and set its initial position.
+				// to connect on the correct port and set its initial position.
 				Arguments = string.Join(" ",
-					$"--pipe-name {GodotBridge.DefaultPipeName}",
+					$"--overlay-port {GodotBridge.DefaultPort}",
 					$"--overlay-x {x}",
 					$"--overlay-y {y}",
 					$"--overlay-w {w}",
