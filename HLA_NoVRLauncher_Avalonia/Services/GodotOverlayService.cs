@@ -159,11 +159,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				cancellationToken: _cts.Token);
 			Console.WriteLine($"[GodotOverlay] Found Godot hwnd: 0x{_godotHwnd:X}");
 
-			// Step 5: Wire up Win32 ownership — same as the old OverlayService.
-			// SetParent → NoActivate → Topmost, in that order.
+			// Step 5: Win32 setup — NoActivate so overlay never steals focus,
+			// Topmost so it renders above the game.
+			// NOTE: SetParent is intentionally omitted — making the overlay an
+			// owned window of the game causes HLA to minimise when focus shifts
+			// between them. Topmost + geometry sync is sufficient.
 			if (_godotHwnd != IntPtr.Zero)
 			{
-				_helper.SetParent(_godotHwnd, _gameHwnd);
 				_helper.SetNoActivate(_godotHwnd);
 				_helper.SetTopmost(_godotHwnd);
 
