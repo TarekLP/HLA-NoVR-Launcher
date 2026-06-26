@@ -272,18 +272,21 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			public static extern IntPtr FindWindowA(string lpClassName, string lpWindowName);
 
 			[DllImport("user32.dll")]
-			private static extern IntPtr GetTopWindow(IntPtr hWnd);
+			private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-			[DllImport("user32.dll")]
-			private static extern IntPtr GetNextWindow(IntPtr hWnd, int nCmd);
-
-			private const int GW_HWNDNEXT = 2;
+			private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
 			[DllImport("user32.dll")]
 			private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
 			[DllImport("user32.dll")]
 			private static extern bool IsWindowVisible(IntPtr hWnd);
+
+			[DllImport("user32.dll", CharSet = CharSet.Auto)]
+			private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+			[DllImport("user32.dll", CharSet = CharSet.Auto)]
+			private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
 			[DllImport("kernel32.dll")]
 			private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
@@ -364,15 +367,44 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			}
 			public static IntPtr GetWindowFromProcessID(uint processID)
 			{
-				IntPtr hwnd = GetTopWindow(IntPtr.Zero);
-				while (hwnd != IntPtr.Zero)
+				IntPtr found = IntPtr.Zero;
+
+				EnumWindows((hwnd, _) =>
 				{
 					GetWindowThreadProcessId(hwnd, out uint wndProcID);
 					if (wndProcID == processID)
-						return hwnd;
-					hwnd = GetNextWindow(hwnd, GW_HWNDNEXT);
-				}
-				return IntPtr.Zero;
+					{
+						found = hwnd;
+						return false; // stop enumeration
+					}
+					return true; // continue
+				}, IntPtr.Zero);
+
+				return found;
+			}
+
+			/// <summary>
+			/// Dumps all top-level windows with their PID, visibility, and title.
+			/// Call this while the game is running to diagnose window enumeration failures.
+			/// </summary>
+			public static void DumpAllWindows()
+			{
+				Console.WriteLine("[WinDump] === All top-level windows ===");
+				EnumWindows((hwnd, _) =>
+				{
+					GetWindowThreadProcessId(hwnd, out uint pid);
+					bool visible = IsWindowVisible(hwnd);
+
+					var sb = new System.Text.StringBuilder(256);
+					GetWindowText(hwnd, sb, 256);
+
+					var cls = new System.Text.StringBuilder(256);
+					GetClassName(hwnd, cls, 256);
+
+					Console.WriteLine($"[WinDump] HWND=0x{hwnd:X} PID={pid} Visible={visible} Class='{cls}' Title='{sb}'");
+					return true;
+				}, IntPtr.Zero);
+				Console.WriteLine("[WinDump] === End ===");
 			}
 
 			private const int GWL_EXSTYLE = -20;
@@ -631,6 +663,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			CancellationToken cancellationToken = default)
 		{
 			DateTime startTime = DateTime.UtcNow;
+			bool dumped = false;
 
 			while (!cancellationToken.IsCancellationRequested)
 			{
@@ -638,6 +671,7 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 				if (gameWindow != IntPtr.Zero)
 				{
+					Console.WriteLine($"[WaitForWindow] Found '{gameExecutableName}' hwnd=0x{gameWindow:X} after {(DateTime.UtcNow - startTime).TotalSeconds:F1}s");
 					if (setupParent && menuWindow != IntPtr.Zero)
 					{
 						WindowHelper.SetParent(menuWindow, gameWindow);
@@ -646,11 +680,26 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 					return gameWindow;
 				}
 
+				// After 5s of not finding it, dump all windows once so we can
+				// see what the process actually owns
+				if (!dumped && (DateTime.UtcNow - startTime).TotalSeconds > 5)
+				{
+					Console.WriteLine($"[WaitForWindow] Still waiting for '{gameExecutableName}' after 5s — dumping all windows:");
+					WindowHelper.DumpAllWindows();
+					dumped = true;
+				}
+
 				await Task.Delay(WINDOW_CHECK_INTERVAL_MS, cancellationToken);
 			}
 
 			throw new OperationCanceledException("Waiting for game window was cancelled");
 		}
+
+		/// <summary>
+		/// Dumps all top-level windows to the console. Call while the game is
+		/// running to diagnose window enumeration failures.
+		/// </summary>
+		public void DumpAllWindows() => WindowHelper.DumpAllWindows();
 
 
 
