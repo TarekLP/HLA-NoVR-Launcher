@@ -25,7 +25,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 		private readonly LauncherHelperService  _helperService    = new();
 
 		// Kept alive for the duration of the game session; disposed on game exit.
-		private OverlayService? _overlayService;
+		private GodotOverlayService? _overlayService;
 
 		// -----------------------------------------------------------------------
 		// Observable properties (unchanged from before)
@@ -163,7 +163,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			_launchService.LaunchGame(settings.CustomLaunchArgs, () =>
 			{
 				// Dispose the overlay first, then restore the launcher on the UI thread
-				_overlayService?.Dispose();
+				_ = _overlayService?.DisposeAsync();
 				_overlayService = null;
 
 				Dispatcher.UIThread.Post(() =>
@@ -179,8 +179,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			// so we fire it as a background task and let it catch up to the game process.
 			if (!settings.DefaultMenu && !string.IsNullOrEmpty(gamePath))
 			{
-				var factory = OverlayWindowFactory ?? (() => throw new InvalidOperationException("No overlay factory set"));
-				_overlayService = new OverlayService(_helperService, factory);
+				_overlayService = new GodotOverlayService(_helperService);
 
 				_overlayService.StateChanged += state =>
 					Console.WriteLine($"[Overlay] → {state}");
@@ -189,12 +188,17 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 				_overlayService.AchievementReceived += id =>
 					Console.WriteLine($"[Overlay] Achievement requested: {id}");
 
+				string godotExePath = Path.Combine(
+					AppDomain.CurrentDomain.BaseDirectory,
+					"hla-no-vr-godot", "hla-no-vr-godot.exe");
+
 				_ = Task.Run(async () =>
 				{
 					try
 					{
 						Console.WriteLine($"[Overlay] Starting. GamePath='{gamePath}'");
-						await _overlayService.InitializeAsync(gamePath);
+						Console.WriteLine($"[Overlay] GodotExe='{godotExePath}'");
+						await _overlayService.InitializeAsync(gamePath, godotExePath);
 						Console.WriteLine("[Overlay] InitializeAsync completed.");
 					}
 					catch (OperationCanceledException)
