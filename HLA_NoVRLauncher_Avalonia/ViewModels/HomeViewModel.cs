@@ -190,7 +190,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 
 				string godotExePath = Path.Combine(
 					AppDomain.CurrentDomain.BaseDirectory,
-					"hla-no-vr-godot", "hla-no-vr-godot.exe");
+					"HLA-NoVR-Godot.exe");
 
 				_ = Task.Run(async () =>
 				{

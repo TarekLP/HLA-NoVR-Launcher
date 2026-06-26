@@ -29,8 +29,13 @@
     <None Include="steam_api64.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="..\hla-no-vr-godot\**" Condition="Exists('..\hla-no-vr-godot')">
-      <Link>hla-no-vr-godot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    <None Include="..\HLA-NoVR-Godot.exe" Condition="Exists('..\HLA-NoVR-Godot.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\HLA-NoVR-Godot.console.exe" Condition="Exists('..\HLA-NoVR-Godot.console.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\HLA-NoVR-Godot.pck" Condition="Exists('..\HLA-NoVR-Godot.pck')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
