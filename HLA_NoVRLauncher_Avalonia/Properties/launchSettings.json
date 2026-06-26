@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "HLA_NoVRLauncher_Avalonia": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
