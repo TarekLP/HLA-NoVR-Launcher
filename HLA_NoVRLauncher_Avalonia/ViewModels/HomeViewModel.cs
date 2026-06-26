@@ -179,7 +179,8 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			// so we fire it as a background task and let it catch up to the game process.
 			if (!settings.DefaultMenu && !string.IsNullOrEmpty(gamePath))
 			{
-				_overlayService = new OverlayService(_helperService);
+				var factory = OverlayWindowFactory ?? (() => throw new InvalidOperationException("No overlay factory set"));
+				_overlayService = new OverlayService(_helperService, factory);
 
 				_overlayService.StateChanged += state =>
 					Console.WriteLine($"[Overlay] → {state}");
