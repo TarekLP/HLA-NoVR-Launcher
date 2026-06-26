@@ -164,7 +164,7 @@ namespace HLA_NoVRLauncher_Avalonia.ViewModels
 			_launchService.LaunchGame(settings.CustomLaunchArgs, () =>
 			{
 				// Dispose the overlay first, then restore the launcher on the UI thread
-				_overlayService?.Dispose();
+				_ = _overlayService?.DisposeAsync();
 				_overlayService = null;
 
 				Dispatcher.UIThread.Post(() =>
