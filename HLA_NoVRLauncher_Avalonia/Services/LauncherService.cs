@@ -573,11 +573,11 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			switch (command.ToLower())
 			{
 				case "exec":
-					WindowHelper.SendPauseKey(WindowHelper.GetWindowByExeName("hlvr.exe"));
+					WindowHelper.SendPauseKey(WindowHelper.FindWindowA("SDL_app", "Half-Life: Alyx"));
 					break;
 
 				case "focusgame":
-					WindowHelper.FocusWindow(WindowHelper.GetWindowByExeName("hlvr.exe"));
+					WindowHelper.FocusWindow(WindowHelper.FindWindowA("SDL_app", "Half-Life: Alyx"));
 					break;
 
 				case "focuslauncher":
@@ -667,7 +667,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 
 			while (!cancellationToken.IsCancellationRequested)
 			{
-				IntPtr gameWindow = WindowHelper.GetWindowByExeName(gameExecutableName);
+				// For hlvr.exe, use FindWindowA by class+title — the process snapshot
+				// approach misses it because Steam launches it via a relay process with
+				// a different PID than the one that owns the SDL_app window.
+				// For everything else (e.g. Godot overlay), fall back to process lookup.
+				IntPtr gameWindow = gameExecutableName.Equals("hlvr.exe", StringComparison.OrdinalIgnoreCase)
+					? WindowHelper.FindWindowA("SDL_app", "Half-Life: Alyx")
+					: WindowHelper.GetWindowByExeName(gameExecutableName);
 
 				if (gameWindow != IntPtr.Zero)
 				{
