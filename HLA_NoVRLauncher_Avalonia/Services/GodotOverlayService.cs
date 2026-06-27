@@ -159,20 +159,21 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 				cancellationToken: _cts.Token);
 			Console.WriteLine($"[GodotOverlay] Found Godot hwnd: 0x{_godotHwnd:X}");
 
-			// Step 5: Win32 setup — NoActivate so overlay never steals focus,
-			// Topmost so it renders above the game.
-			// NOTE: SetParent is intentionally omitted — making the overlay an
-			// owned window of the game causes HLA to minimise when focus shifts
-			// between them. Topmost + geometry sync is sufficient.
+			// Step 5: Win32 setup — NoActivate + ToolWindow so overlay never
+			// steals focus, then show without activating and immediately
+			// return focus to the game.
 			if (_godotHwnd != IntPtr.Zero)
 			{
 				_helper.SetNoActivate(_godotHwnd);
 				_helper.SetTopmost(_godotHwnd);
 
-				// Apply the initial bounds immediately via Win32.
-				// (Godot may not have connected to the pipe yet.)
 				if (gw > 0 && gh > 0)
 					_helper.SetWindowBounds(_godotHwnd, gx, gy, gw, gh);
+
+				// Show the Godot window without stealing focus, then
+				// explicitly put focus back on the game window.
+				_helper.ShowWindowNoActivate(_godotHwnd);
+				_helper.FocusWindow(_gameHwnd);
 			}
 			else
 			{
@@ -432,16 +433,22 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		// Godot process launcher
 		// -----------------------------------------------------------------------
 
+		[System.Runtime.InteropServices.DllImport("user32.dll")]
+		private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+		private const int SW_SHOWNOACTIVATE   = 4;  // show without stealing focus
+		private const int SW_SHOWMINNOACTIVE  = 7;  // minimize without stealing focus
+
 		private static Process LaunchGodotProcess(string exePath, int x, int y, int w, int h)
 		{
 			var info = new ProcessStartInfo
 			{
 				FileName        = exePath,
 				UseShellExecute = false,
-
-				// These arguments are read by the Godot overlay on startup.
-				// The GDScript bootstrap reads them with OS.get_cmdline_args()
-				// to connect on the correct port and set its initial position.
+				// WindowStyle = Minimized prevents the window flash on startup.
+				// Godot will be repositioned and shown without activation after
+				// WaitForGameWindowAsync finds its HWND.
+				WindowStyle     = System.Diagnostics.ProcessWindowStyle.Minimized,
 				Arguments = string.Join(" ",
 					$"--overlay-port {GodotBridge.DefaultPort}",
 					$"--overlay-x {x}",

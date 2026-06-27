@@ -408,13 +408,18 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			}
 
 			private const int GWL_EXSTYLE = -20;
-			private const uint WS_EX_NOACTIVATE = 0x08000000;
+			private const uint WS_EX_NOACTIVATE  = 0x08000000;
+			private const uint WS_EX_TOOLWINDOW  = 0x00000080; // hides from taskbar/alt-tab
 
 			public static void SetNoActivate(IntPtr hwnd)
 			{
 				if (hwnd == IntPtr.Zero) return;
 				IntPtr style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-				SetWindowLongPtr(hwnd, GWL_EXSTYLE, (IntPtr)((uint)style | WS_EX_NOACTIVATE));
+				// NOACTIVATE: clicks don't activate the window
+				// TOOLWINDOW: keeps it out of taskbar and alt-tab, so Windows
+				//             doesn't consider it a focus candidate on show
+				SetWindowLongPtr(hwnd, GWL_EXSTYLE,
+					(IntPtr)((uint)style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW));
 			}
 
 			public static uint GetProcessIDByExeName(string exeName)
@@ -510,8 +515,9 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			private const uint SWP_NOACTIVATE  = 0x0010;
 			private const uint SWP_NOZORDER    = 0x0004;
 
-			private const int SW_HIDE = 0;
-			private const int SW_SHOW = 5;
+			private const int SW_HIDE           = 0;
+			private const int SW_SHOWNOACTIVATE = 4;
+			private const int SW_SHOW           = 5;
 
 			public static void ForceTopmost(IntPtr hwnd)
 			{
@@ -536,6 +542,13 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 			{
 				if (hwnd != IntPtr.Zero)
 					ShowWindow(hwnd, SW_SHOW);
+			}
+
+			/// <summary>Shows a window without stealing focus from the active window.</summary>
+			public static void ShowNoActivate(IntPtr hwnd)
+			{
+				if (hwnd != IntPtr.Zero)
+					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 			}
 
 			/// <summary>Hides a window without destroying it.</summary>
@@ -743,6 +756,15 @@ namespace HLA_NoVRLauncher_Avalonia.Services
 		/// </summary>
 		public void SetWindowBounds(IntPtr hwnd, int x, int y, int w, int h)
 			=> WindowHelper.SetBounds(hwnd, x, y, w, h);
+
+		/// <summary>Makes the window visible without stealing focus.</summary>
+		/// <summary>Makes the window visible without stealing focus.</summary>
+		public void ShowWindowNoActivate(IntPtr hwnd)
+			=> WindowHelper.ShowNoActivate(hwnd);
+
+		/// <summary>Brings a window to the foreground.</summary>
+		public void FocusWindow(IntPtr hwnd)
+			=> WindowHelper.FocusWindow(hwnd);
 
 		/// <summary>Makes the window visible without stealing focus.</summary>
 		public void ShowWindow(IntPtr hwnd)
