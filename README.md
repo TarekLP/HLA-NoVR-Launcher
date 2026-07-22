@@ -23,7 +23,7 @@
 1. Download the [latest release](https://github.com/HLANoVR/HLA-NoVR-Launcher/releases).
 2. Download your desired Build from the [HLA-NoVR Repo](https://github.com/HLANoVR/HLA-NoVR), keep it in a zip file (make sure the game folder is in it but DO NOT EXTRACT)
 3. Drop the program files into a folder and run the exe.
-4. Go through the Firs time setup to adjust everything, when it asks you to select a .zip file, select the one you downloaded earlier.
+4. Go through the first time setup to adjust everything, when it asks you to select a .zip file, select the one you downloaded earlier.
 5. Click "Play" and profit.
 
 ### Linux
